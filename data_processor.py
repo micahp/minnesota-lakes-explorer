@@ -17,10 +17,17 @@ def get_processed_data():
     # Try to load PLS data if available
     pls_data = get_pls_data()
     if pls_data is not None:
-        # If we have PLS data, merge it with lake data based on section ID
-        # Adjust the merge logic based on your specific needs
-        df = pd.merge(
-            df,
+        # Convert PLS_SECTION_ID_LAKE_CENTER to numeric, handling any conversion errors
+        df['PLS_SECTION_ID_LAKE_CENTER'] = pd.to_numeric(
+            df['PLS_SECTION_ID_LAKE_CENTER'].str.replace(',', ''), 
+            errors='coerce'
+        )
+
+        # Convert Section_ID to int64 to ensure type compatibility
+        pls_data['Section_ID'] = pls_data['Section_ID'].astype('Int64')
+
+        # Now merge with compatible types
+        df = df.merge(
             pls_data,
             left_on='PLS_SECTION_ID_LAKE_CENTER',
             right_on='Section_ID',
