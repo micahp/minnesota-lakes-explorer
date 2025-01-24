@@ -4,6 +4,7 @@ from streamlit_folium import st_folium
 from utils import format_lake_info
 from data_processor import get_processed_data
 from folium.plugins import MarkerCluster
+from pls_processor import get_county_data
 
 # Page configuration
 st.set_page_config(
@@ -25,11 +26,24 @@ st.title("🌊 Minnesota Lakes Explorer")
 def load_data():
     return get_processed_data()
 
+@st.cache_data(ttl=3600)
+def load_county_data():
+    return get_county_data()
+
 df = load_data()
+counties = load_county_data()
 
 # Sidebar for filters and lake info
 with st.sidebar:
     st.header("Lake Filters")
+
+    # County selection if available
+    selected_county = None
+    if counties and counties['names']:
+        selected_county = st.selectbox(
+            "Select County",
+            ["All Counties"] + counties['names']
+        )
 
     # Area filter
     min_area = float(df['LAKE_AREA_DOW_ACRES'].min())
@@ -71,6 +85,26 @@ m = folium.Map(
     zoom_start=7,
     tiles='CartoDB positron'
 )
+
+# Add county borders if available
+if counties:
+    county_style = {
+        'fillColor': '#3388ff',
+        'color': '#3388ff',
+        'weight': 2,
+        'fillOpacity': 0.1
+    }
+
+    for i, polygon in enumerate(counties['polygons']):
+        # Convert points to folium format
+        locations = [[p[1], p[0]] for p in polygon]  # Swap lat/long
+
+        # Create polygon with county name popup
+        folium.Polygon(
+            locations=locations,
+            popup=counties['names'][i],
+            **county_style
+        ).add_to(m)
 
 # Create a marker cluster
 marker_cluster = MarkerCluster(
