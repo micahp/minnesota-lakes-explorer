@@ -1,9 +1,8 @@
 import streamlit as st
 import folium
-from streamlit_folium import folium_static
+from streamlit_folium import st_folium
 import pandas as pd
 from utils import load_and_process_lake_data, format_lake_info
-import streamlit.components.v1 as components
 
 # Page configuration
 st.set_page_config(
@@ -52,25 +51,28 @@ with st.sidebar:
 
     st.markdown(f"Showing **{len(filtered_df)}** lakes")
 
-# Initialize session state for selected lake
-if 'selected_lake' not in st.session_state:
-    st.session_state.selected_lake = None
-
 # Lake information panel
 with col1:
-    if st.session_state.selected_lake is not None:
-        lake_info = format_lake_info(st.session_state.selected_lake)
+    st.markdown('<div class="lake-info">', unsafe_allow_html=True)
 
-        st.markdown('<div class="lake-info">', unsafe_allow_html=True)
+    if 'last_clicked' not in st.session_state:
+        st.session_state.last_clicked = None
+
+    if st.session_state.last_clicked is not None:
+        selected_lake = filtered_df.iloc[st.session_state.last_clicked]
+        lake_info = format_lake_info(selected_lake)
+
         st.markdown(f"<h2 class='lake-name'>{lake_info['Name']}</h2>", unsafe_allow_html=True)
-
         for key, value in lake_info.items():
             if key != 'Name':
                 st.markdown(
                     f"<div class='lake-stat'><span class='lake-stat-label'>{key}:</span> {value}</div>",
                     unsafe_allow_html=True
                 )
-        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.write("Click on a lake marker to see details")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Map
 with col2:
@@ -96,46 +98,24 @@ with col2:
             weight=2,
         ).add_to(m)
 
-        # Add click event
-        folium.Circle(
-            location=[row['LAKE_CENTER_LAT_DD5'], row['LAKE_CENTER_LONG_DD5']],
-            radius=100,
-            popup=popup_content,
-            color='transparent',
-            fill=False,
-            opacity=0,
-            fillOpacity=0,
-            weight=0,
-            onclick=f"""
-                (function(e) {{
-                    var lake_data = {{'index': {idx}}};
-                    window.parent.postMessage({{action: 'select_lake', lake_data: lake_data}}, '*');
-                }})
-            """
-        ).add_to(m)
-
-    # Display map
+    # Display map using st_folium
     st.markdown('<div class="map-container">', unsafe_allow_html=True)
-    folium_static(m, width=800, height=600)
+    map_data = st_folium(m, width=800, height=600)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Handle lake selection
-components.html(
-    """
-    <script>
-    window.addEventListener('message', function(e) {
-        if (e.data.action === 'select_lake') {
-            window.Streamlit.setComponentValue(e.data.lake_data);
-        }
-    });
-    </script>
-    """,
-    height=0,
-    key="lake_selector"
-)
+    # Handle clicks
+    if map_data['last_clicked']:
+        clicked_lat = map_data['last_clicked']['lat']
+        clicked_lng = map_data['last_clicked']['lng']
 
-# Update selected lake when clicked
-if st.session_state.lake_selector is not None:
-    lake_idx = st.session_state.lake_selector['index']
-    st.session_state.selected_lake = filtered_df.iloc[lake_idx]
-    st.experimental_rerun()
+        # Find the closest lake
+        distances = filtered_df.apply(
+            lambda row: (row['LAKE_CENTER_LAT_DD5'] - clicked_lat)**2 + 
+                       (row['LAKE_CENTER_LONG_DD5'] - clicked_lng)**2,
+            axis=1
+        )
+        closest_lake_idx = distances.argmin()
+
+        if st.session_state.last_clicked != closest_lake_idx:
+            st.session_state.last_clicked = closest_lake_idx
+            st.experimental_rerun()
