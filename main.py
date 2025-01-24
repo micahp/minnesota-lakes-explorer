@@ -1,8 +1,8 @@
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-import pandas as pd
-from utils import load_and_process_lake_data, format_lake_info
+from utils import format_lake_info
+from data_processor import get_processed_data
 from folium.plugins import MarkerCluster
 
 # Page configuration
@@ -21,9 +21,9 @@ with open('style.css') as f:
 st.title("🌊 Minnesota Lakes Explorer")
 
 # Load and process data
-@st.cache_data
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_data():
-    return load_and_process_lake_data('attached_assets/fisheries_lake_data(Sheet 1).csv')
+    return get_processed_data()
 
 df = load_data()
 
