@@ -3,6 +3,7 @@ import folium
 from streamlit_folium import st_folium
 import pandas as pd
 from utils import load_and_process_lake_data, format_lake_info
+from folium.plugins import MarkerCluster
 
 # Page configuration
 st.set_page_config(
@@ -83,20 +84,42 @@ with col2:
         tiles='CartoDB positron'
     )
 
-    # Add markers for each lake
-    for idx, row in filtered_df.iterrows():
-        popup_content = f"{row['LAKE_NAME']} ({row['LAKE_AREA_DOW_ACRES']} acres)"
+    # Create a marker cluster
+    marker_cluster = MarkerCluster(
+        name="Lake Markers",
+        overlay=True,
+        control=True,
+        options={
+            'maxClusterRadius': 50,
+            'disableClusteringAtZoom': 10
+        }
+    ).add_to(m)
 
-        folium.CircleMarker(
-            location=[row['LAKE_CENTER_LAT_DD5'], row['LAKE_CENTER_LONG_DD5']],
-            radius=5,
-            popup=popup_content,
-            color='#0077be',
-            fill=True,
-            fill_color='#0077be',
-            fill_opacity=0.7,
-            weight=2,
-        ).add_to(m)
+    # Add markers in batches with a progress indicator
+    BATCH_SIZE = 100
+    total_lakes = len(filtered_df)
+    progress_bar = st.progress(0)
+
+    for i in range(0, total_lakes, BATCH_SIZE):
+        batch = filtered_df.iloc[i:i+BATCH_SIZE]
+        for _, row in batch.iterrows():
+            folium.CircleMarker(
+                location=[row['LAKE_CENTER_LAT_DD5'], row['LAKE_CENTER_LONG_DD5']],
+                radius=5,
+                popup=f"{row['LAKE_NAME']} ({row['LAKE_AREA_DOW_ACRES']} acres)",
+                color='#0077be',
+                fill=True,
+                fill_color='#0077be',
+                fill_opacity=0.7,
+                weight=2,
+            ).add_to(marker_cluster)
+
+        # Update progress
+        progress = min((i + BATCH_SIZE) / total_lakes, 1.0)
+        progress_bar.progress(progress)
+
+    # Hide progress bar when done
+    progress_bar.empty()
 
     # Display map using st_folium
     st.markdown('<div class="map-container">', unsafe_allow_html=True)
