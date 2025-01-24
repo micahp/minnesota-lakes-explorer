@@ -3,6 +3,7 @@ import folium
 from streamlit_folium import folium_static
 import pandas as pd
 from utils import load_and_process_lake_data, format_lake_info
+import streamlit.components.v1 as components
 
 # Page configuration
 st.set_page_config(
@@ -32,7 +33,7 @@ col1, col2 = st.columns([1, 2])
 # Sidebar for filters
 with st.sidebar:
     st.header("Lake Filters")
-    
+
     # Area filter
     min_area = float(df['LAKE_AREA_DOW_ACRES'].min())
     max_area = float(df['LAKE_AREA_DOW_ACRES'].max())
@@ -42,13 +43,13 @@ with st.sidebar:
         max_value=max_area,
         value=(min_area, max_area)
     )
-    
+
     # Apply filters
     filtered_df = df[
         (df['LAKE_AREA_DOW_ACRES'] >= area_range[0]) &
         (df['LAKE_AREA_DOW_ACRES'] <= area_range[1])
     ]
-    
+
     st.markdown(f"Showing **{len(filtered_df)}** lakes")
 
 # Initialize session state for selected lake
@@ -59,10 +60,10 @@ if 'selected_lake' not in st.session_state:
 with col1:
     if st.session_state.selected_lake is not None:
         lake_info = format_lake_info(st.session_state.selected_lake)
-        
+
         st.markdown('<div class="lake-info">', unsafe_allow_html=True)
         st.markdown(f"<h2 class='lake-name'>{lake_info['Name']}</h2>", unsafe_allow_html=True)
-        
+
         for key, value in lake_info.items():
             if key != 'Name':
                 st.markdown(
@@ -79,11 +80,11 @@ with col2:
         zoom_start=7,
         tiles='CartoDB positron'
     )
-    
+
     # Add markers for each lake
     for idx, row in filtered_df.iterrows():
         popup_content = f"{row['LAKE_NAME']} ({row['LAKE_AREA_DOW_ACRES']} acres)"
-        
+
         folium.CircleMarker(
             location=[row['LAKE_CENTER_LAT_DD5'], row['LAKE_CENTER_LONG_DD5']],
             radius=5,
@@ -94,7 +95,7 @@ with col2:
             fill_opacity=0.7,
             weight=2,
         ).add_to(m)
-        
+
         # Add click event
         folium.Circle(
             location=[row['LAKE_CENTER_LAT_DD5'], row['LAKE_CENTER_LONG_DD5']],
@@ -112,7 +113,7 @@ with col2:
                 }})
             """
         ).add_to(m)
-    
+
     # Display map
     st.markdown('<div class="map-container">', unsafe_allow_html=True)
     folium_static(m, width=800, height=600)
