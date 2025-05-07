@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minnesota Lakes Explorer</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Minnesota Lakes Explorer</h1>
+    </header>
+    <main>
+      <div id="sidebar">
+        <div class="filters">
+          <h2>Lake Filters</h2>
+          <div class="filter-group">
+            <label for="county-select">County:</label>
+            <select id="county-select">
+              <option value="all">All Counties</option>
+              <!-- Counties will be populated dynamically -->
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="area-min">Minimum Lake Area (acres):</label>
+            <input type="number" id="area-min" value="10" min="0">
+          </div>
+          <div class="filter-group">
+            <label for="area-max">Maximum Lake Area (acres):</label>
+            <input type="number" id="area-max" value="100000" min="10">
+          </div>
+          <div class="filter-group">
+            <label for="fish-select">Fish Species:</label>
+            <select id="fish-select">
+              <option value="all">All Species</option>
+              <!-- Fish species will be populated dynamically -->
+            </select>
+          </div>
+          <button id="apply-filters">Apply Filters</button>
+        </div>
+        <div class="lake-info">
+          <h2>Lake Information</h2>
+          <div id="lake-details">
+            <p class="info-message">Click on a lake marker to see details</p>
+          </div>
+        </div>
+      </div>
+      <div id="map-container"></div>
+    </main>
+    <footer>
+      <p>Minnesota Lakes Explorer &copy; 2024</p>
+    </footer>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- MarkerCluster plugin -->
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <!-- Custom JS -->
+  <script src="js/data-loader.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html> 
