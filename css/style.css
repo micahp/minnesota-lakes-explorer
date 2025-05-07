@@ -1,204 +1,322 @@
-/* Global Styles */
+/* Minnesota Lake Explorer Styles */
+
+/* Base styles */
 * {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  line-height: 1.6;
-  color: #333;
-  background-color: #f8f9fa;
+    font-family: 'Open Sans', Arial, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f5f7fa;
 }
 
-#app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100%;
+.container {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
 }
 
+/* Header */
 header {
-  background-color: #0077be;
-  color: white;
-  padding: 1rem;
-  text-align: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background-color: #2c3e50;
+    color: white;
+    padding: 1rem;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
-main {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
+header h1 {
+    margin: 0;
+    font-size: 1.5rem;
 }
 
-footer {
-  background-color: #f8f9fa;
-  padding: 0.5rem;
-  text-align: center;
-  font-size: 0.8rem;
-  border-top: 1px solid #dee2e6;
+/* Sidebar */
+.sidebar {
+    width: 300px;
+    background-color: white;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    z-index: 900;
+    padding-top: 60px;
 }
 
-/* Sidebar Styles */
-#sidebar {
-  width: 300px;
-  background-color: white;
-  overflow-y: auto;
-  border-right: 1px solid #dee2e6;
-  padding: 1rem;
+.controls {
+    padding: 1rem;
+    border-bottom: 1px solid #eee;
 }
 
-.filters, .lake-info {
-  margin-bottom: 1.5rem;
+.control-group {
+    margin-bottom: 1rem;
 }
 
-h2 {
-  font-size: 1.2rem;
-  margin-bottom: 1rem;
-  color: #0077be;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid #dee2e6;
+.control-group:last-child {
+    margin-bottom: 0;
 }
 
-.filter-group {
-  margin-bottom: 1rem;
+.control-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    font-size: 0.9rem;
 }
 
-.filter-group label {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-weight: 500;
+.search-container {
+    display: flex;
+    gap: 0.5rem;
 }
 
-select, input {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ced4da;
-  border-radius: 4px;
+#search-input {
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
 }
 
 button {
-  background-color: #0077be;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  border-radius: 4px;
-  width: 100%;
-  font-weight: 500;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.3s;
 }
 
 button:hover {
-  background-color: #005c91;
+    background-color: #2980b9;
 }
 
-/* Lake Info Styles */
+#clear-search {
+    background-color: #95a5a6;
+}
+
+#clear-search:hover {
+    background-color: #7f8c8d;
+}
+
+select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+}
+
+#results-count {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #7f8c8d;
+    display: none;
+}
+
+/* Lake details panel */
 #lake-details {
-  background-color: #f8f9fa;
-  border-radius: 4px;
-  padding: 1rem;
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+    display: none;
+    background-color: #fff;
+    border-top: 1px solid #eee;
 }
 
-.info-message {
-  color: #6c757d;
-  font-style: italic;
+#lake-details.active {
+    display: block;
 }
 
-.lake-detail-item {
-  margin-bottom: 0.5rem;
+.details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
 }
 
-.lake-detail-item span {
-  font-weight: 500;
+#lake-name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0;
 }
 
-/* Map Container Styles */
-#map-container {
-  flex: 1;
-  height: 100%;
+#close-details {
+    background-color: transparent;
+    color: #95a5a6;
+    font-size: 1.2rem;
+    padding: 0.2rem 0.5rem;
 }
 
-/* Popup Styles */
-.leaflet-popup-content {
-  font-size: 0.9rem;
+#close-details:hover {
+    color: #7f8c8d;
+    background-color: #f8f9fa;
 }
 
-.popup-title {
-  font-weight: bold;
-  font-size: 1.1rem;
-  margin-bottom: 0.5rem;
-  color: #0077be;
+.info-section {
+    margin-bottom: 2rem;
 }
 
-.popup-content p {
-  margin-bottom: 0.25rem;
+.info-section h3 {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+    color: #2c3e50;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.5rem;
 }
 
-.popup-links {
-  margin-top: 0.5rem;
-  display: flex;
-  justify-content: space-between;
+.info-table {
+    width: 100%;
+    border-collapse: collapse;
 }
 
-.popup-links a {
-  color: #0077be;
-  text-decoration: none;
+.info-table th, .info-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
 }
 
-.popup-links a:hover {
-  text-decoration: underline;
+.info-table th {
+    width: 40%;
+    font-weight: 600;
+    color: #7f8c8d;
 }
 
-/* Fish consumption advisory box */
-.advisory-box {
-  background-color: #e7f4f9;
-  border-left: 4px solid #0077be;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-  border-radius: 0 4px 4px 0;
+/* Map container */
+.map-container {
+    flex: 1;
+    position: relative;
+    padding-top: 60px;
 }
 
-.advisory-box h3 {
-  display: flex;
-  align-items: center;
-  font-size: 1rem;
-  margin-bottom: 0.25rem;
+#map {
+    height: 100%;
+    width: 100%;
 }
 
-.advisory-box h3 i {
-  margin-right: 0.5rem;
-  color: #0077be;
+/* Fish species styles */
+.fish-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
 }
 
-.advisory-box p {
-  font-size: 0.9rem;
+.fish-card {
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 1rem;
+    background-color: #f9f9f9;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.advisory-box a {
-  color: #0077be;
-  text-decoration: none;
+.fish-card h4 {
+    margin: 0 0 0.25rem;
+    color: #2c3e50;
 }
 
-.advisory-box a:hover {
-  text-decoration: underline;
+.scientific-name {
+    font-style: italic;
+    color: #7f8c8d;
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+}
+
+.fish-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.stat {
+    flex: 1;
+    min-width: 100px;
+    background-color: #f0f4f8;
+    padding: 0.5rem;
+    border-radius: 4px;
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #7f8c8d;
+}
+
+.stat-value {
+    display: block;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.length-distribution {
+    margin-top: 1rem;
+}
+
+.length-distribution h5 {
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    color: #2c3e50;
+}
+
+.length-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.length-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 20px;
+}
+
+.length-label {
+    width: 30px;
+    font-size: 0.75rem;
+    text-align: right;
+    color: #7f8c8d;
+}
+
+.length-bar {
+    height: 12px;
+    background-color: #3498db;
+    border-radius: 2px;
+}
+
+.length-count {
+    font-size: 0.75rem;
+    color: #7f8c8d;
+    min-width: 20px;
 }
 
 /* Responsive styles */
 @media (max-width: 768px) {
-  main {
-    flex-direction: column;
-  }
-  
-  #sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid #dee2e6;
-    max-height: 300px;
-  }
-  
-  #map-container {
-    height: calc(100vh - 300px - 56px - 32px); /* Subtract sidebar, header, and footer height */
-  }
+    .container {
+        flex-direction: column;
+    }
+    
+    .sidebar {
+        width: 100%;
+        height: auto;
+        padding-top: 60px;
+    }
+    
+    .map-container {
+        height: 60vh;
+    }
+    
+    #lake-details {
+        max-height: 40vh;
+    }
+    
+    .fish-list {
+        grid-template-columns: 1fr;
+    }
 } 

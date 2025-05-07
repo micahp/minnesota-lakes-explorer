@@ -1,293 +1,288 @@
-/**
- * Map module for Minnesota Lakes Explorer
- * Handles the Leaflet map, markers, and interactions
- */
+// Map handling for Minnesota Lake Explorer
+// Uses Leaflet.js to display lake locations and data
 
-const MapManager = {
-  // Leaflet map object
-  map: null,
-  
-  // Marker cluster group
-  markerCluster: null,
-  
-  // Store markers by DOW ID for easy access
-  markers: {},
-  
-  // Currently selected lake
-  selectedLakeId: null,
-  
-  /**
-   * Initialize the map
-   * @param {string} elementId - ID of the HTML element to contain the map
-   * @returns {Object} The map object
-   */
-  init: function(elementId) {
-    // Create the map centered on Minnesota
-    this.map = L.map(elementId, {
-      center: [46.7296, -94.6859],
-      zoom: 7,
-      minZoom: 6,
-      maxZoom: 18
-    });
-    
-    // Add the base tile layer (CartoDB)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 19
-    }).addTo(this.map);
-    
-    // Create a marker cluster group
-    this.markerCluster = L.markerClusterGroup({
-      maxClusterRadius: 50,
-      disableClusteringAtZoom: 10,
-      showCoverageOnHover: false,
-      spiderfyOnMaxZoom: true
-    });
-    
-    // Add the marker cluster to the map
-    this.map.addLayer(this.markerCluster);
-    
-    return this.map;
-  },
-  
-  /**
-   * Add lake markers to the map
-   * @param {Array} lakes - Array of lake objects to add as markers
-   */
-  addLakeMarkers: function(lakes) {
-    // Clear existing markers
-    this.markerCluster.clearLayers();
-    this.markers = {};
-    
-    // Loop through lakes and add markers
-    lakes.forEach(lake => {
-      if (!lake.LAKE_CENTER_LAT_DD5 || !lake.LAKE_CENTER_LONG_DD5) {
-        return; // Skip lakes without coordinates
-      }
-      
-      // Determine if this is a sentinel or border lake for styling
-      const isSentinel = DataLoader.sentinelLakes.includes(lake.DOW);
-      const isBorder = DataLoader.borderLakes.includes(lake.DOW);
-      
-      // Create a circle marker
-      const marker = L.circleMarker(
-        [lake.LAKE_CENTER_LAT_DD5, lake.LAKE_CENTER_LONG_DD5],
-        {
-          radius: this.calculateMarkerSize(lake.LAKE_AREA_DOW_ACRES),
-          color: this.getMarkerColor(isSentinel, isBorder),
-          fillColor: this.getMarkerColor(isSentinel, isBorder),
-          fillOpacity: 0.7,
-          weight: 2
-        }
-      );
-      
-      // Create popup content
-      const popupContent = this.createPopupContent(lake);
-      marker.bindPopup(popupContent);
-      
-      // Add click handler to marker
-      marker.on('click', () => {
-        this.onMarkerClick(lake.DOW);
-      });
-      
-      // Add marker to cluster and store reference by DOW
-      this.markerCluster.addLayer(marker);
-      this.markers[lake.DOW] = marker;
-    });
-  },
-  
-  /**
-   * Calculate marker size based on lake area
-   * @param {number} area - Lake area in acres
-   * @returns {number} Marker radius in pixels
-   */
-  calculateMarkerSize: function(area) {
-    // Base size of 4 pixels, increase slightly for larger lakes
-    if (area < 100) return 4;
-    if (area < 500) return 5;
-    if (area < 1000) return 6;
-    if (area < 5000) return 7;
-    return 8; // For very large lakes
-  },
-  
-  /**
-   * Get marker color based on lake attributes
-   * @param {boolean} isSentinel - Whether the lake is a sentinel lake
-   * @param {boolean} isBorder - Whether the lake is a border water
-   * @returns {string} Color hex code
-   */
-  getMarkerColor: function(isSentinel, isBorder) {
-    if (isSentinel) return '#ff7f00'; // Orange for sentinel lakes
-    if (isBorder) return '#4daf4a';   // Green for border waters
-    return '#0077be';                 // Blue for regular lakes
-  },
-  
-  /**
-   * Create HTML content for the popup
-   * @param {Object} lake - Lake object
-   * @returns {string} HTML content
-   */
-  createPopupContent: function(lake) {
-    // Format lake information
-    const lakeInfo = DataLoader.formatLakeInfo(lake);
-    
-    // Create popup content with HTML
-    let content = `
-      <div class="popup-title">${lakeInfo.name} (${lakeInfo.id})</div>
-      <div class="popup-content">
-    `;
-    
-    // Add fish consumption advisory if available
-    if (lake.HAS_CONSUMPTION_ADVISORY) {
-      content += `
-        <div class="advisory-box">
-          <h3><i class="fa fa-info-circle"></i>Fish consumption advisory</h3>
-          <p>See the <a href="https://www.health.state.mn.us/communities/environment/fish/index.html" target="_blank">Fish Consumption</a> guidance provided by the Minnesota Department of Health.</p>
-        </div>
-      `;
+import dataLoader from './data-loader.js';
+
+class LakeMap {
+    constructor(mapElementId) {
+        this.mapElementId = mapElementId;
+        this.map = null;
+        this.markers = [];
+        this.markerCluster = null;
+        this.selectedLake = null;
+        this.onLakeSelectedCallbacks = [];
     }
-    
-    // Add lake details
-    content += `
-      <p><strong>County:</strong> ${lakeInfo.county}</p>
-      <p><strong>Area:</strong> ${lakeInfo.area}</p>
-    `;
-    
-    // Add max depth if available
-    if (lakeInfo.maxDepth !== 'Unknown') {
-      content += `<p><strong>Max Depth:</strong> ${lakeInfo.maxDepth}</p>`;
+
+    // Initialize the map
+    async initialize() {
+        // Create map centered on Minnesota
+        this.map = L.map(this.mapElementId).setView([46.5, -94.5], 7);
+        
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(this.map);
+
+        // Load lake data
+        await dataLoader.loadInitialData();
+        
+        // Add lake markers
+        this.addLakeMarkers();
+        
+        return this.map;
     }
-    
-    // Add special designations
-    if (lakeInfo.isSentinel) {
-      content += `<p><strong>Sentinel Lake:</strong> Yes</p>`;
-    }
-    
-    if (lakeInfo.isBorder) {
-      content += `<p><strong>Border Water:</strong> Yes</p>`;
-    }
-    
-    // Add links for directions
-    content += `
-      </div>
-      <div class="popup-links">
-        <a href="https://www.bing.com/maps?sp=point.${lakeInfo.latitude}_${lakeInfo.longitude}_${encodeURIComponent(lakeInfo.name)}" target="_blank">Bing Maps</a>
-        <a href="https://www.google.com/maps/search/?api=1&query=${lakeInfo.latitude},${lakeInfo.longitude}" target="_blank">Google Maps</a>
-      </div>
-    `;
-    
-    return content;
-  },
-  
-  /**
-   * Handle marker click event
-   * @param {string} lakeId - DOW ID of the clicked lake
-   */
-  onMarkerClick: function(lakeId) {
-    // Highlight the selected lake
-    this.selectLake(lakeId);
-    
-    // Update lake details in sidebar
-    this.updateLakeDetails(lakeId);
-  },
-  
-  /**
-   * Select and highlight a lake on the map
-   * @param {string} lakeId - DOW ID of the lake to select
-   */
-  selectLake: function(lakeId) {
-    // Reset previous selection
-    if (this.selectedLakeId && this.markers[this.selectedLakeId]) {
-      const prevMarker = this.markers[this.selectedLakeId];
-      const lake = DataLoader.getLakeById(this.selectedLakeId);
-      if (lake) {
-        const isSentinel = DataLoader.sentinelLakes.includes(lake.DOW);
-        const isBorder = DataLoader.borderLakes.includes(lake.DOW);
-        prevMarker.setStyle({
-          color: this.getMarkerColor(isSentinel, isBorder),
-          fillColor: this.getMarkerColor(isSentinel, isBorder)
+
+    // Add markers for all lakes
+    addLakeMarkers() {
+        // Clear existing markers
+        this.clearMarkers();
+        
+        // Create a marker cluster group
+        this.markerCluster = L.markerClusterGroup({
+            maxClusterRadius: 50,
+            disableClusteringAtZoom: 10,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
         });
-      }
+        
+        // Add a marker for each lake
+        dataLoader.lakes.forEach(lake => {
+            if (lake.latitude && lake.longitude) {
+                const marker = L.circleMarker([lake.latitude, lake.longitude], {
+                    radius: this.calculateMarkerSize(lake.area_acres),
+                    color: '#0077be',
+                    fillColor: '#0077be',
+                    fillOpacity: 0.6,
+                    weight: 1
+                });
+                
+                // Add popup with basic lake info
+                marker.bindTooltip(`${lake.name}<br>${lake.county} County<br>${lake.area_acres} acres`);
+                
+                // Add click handler
+                marker.on('click', () => this.onLakeMarkerClick(lake));
+                
+                // Add marker to cluster and store reference
+                this.markerCluster.addLayer(marker);
+                this.markers.push({
+                    id: lake.id,
+                    marker: marker
+                });
+            }
+        });
+        
+        // Add the marker cluster to the map
+        this.map.addLayer(this.markerCluster);
+        
+        console.log(`Added ${this.markers.length} lake markers to map`);
     }
-    
-    // Set new selection
-    this.selectedLakeId = lakeId;
-    
-    // Highlight new selection if exists
-    if (lakeId && this.markers[lakeId]) {
-      const marker = this.markers[lakeId];
-      marker.setStyle({
-        color: '#e41a1c',
-        fillColor: '#e41a1c'
-      });
-      
-      // Open popup and pan to marker
-      marker.openPopup();
-      this.map.panTo(marker.getLatLng());
-    }
-  },
-  
-  /**
-   * Update lake details in the sidebar
-   * @param {string} lakeId - DOW ID of the lake
-   */
-  updateLakeDetails: function(lakeId) {
-    const lakeDetailsElement = document.getElementById('lake-details');
-    if (!lakeDetailsElement) return;
-    
-    const lake = DataLoader.getLakeById(lakeId);
-    if (!lake) {
-      lakeDetailsElement.innerHTML = '<p class="info-message">Lake information not available</p>';
-      return;
-    }
-    
-    // Format lake information
-    const lakeInfo = DataLoader.formatLakeInfo(lake);
-    
-    // Create HTML for lake details
-    let html = `<h3>${lakeInfo.name}</h3>`;
-    
-    // Fish consumption advisory if available
-    if (lake.HAS_CONSUMPTION_ADVISORY) {
-      html += `
-        <div class="advisory-box">
-          <h3><i class="fa fa-info-circle"></i>Fish consumption advisory</h3>
-          <p>See the <a href="https://www.health.state.mn.us/communities/environment/fish/index.html" target="_blank">Fish Consumption</a> guidance.</p>
-        </div>
-      `;
-    }
-    
-    // Lake details
-    html += `
-      <div class="lake-detail-item"><span>ID:</span> ${lakeInfo.id}</div>
-      <div class="lake-detail-item"><span>County:</span> ${lakeInfo.county}</div>
-    `;
-    
-    if (lakeInfo.nearestTown) {
-      html += `<div class="lake-detail-item"><span>Nearest Town:</span> ${lakeInfo.nearestTown}</div>`;
-    }
-    
-    html += `
-      <div class="lake-detail-item"><span>Area:</span> ${lakeInfo.area}</div>
-      <div class="lake-detail-item"><span>Shoreline:</span> ${lakeInfo.shoreline}</div>
-      <div class="lake-detail-item"><span>Max Depth:</span> ${lakeInfo.maxDepth}</div>
-      <div class="lake-detail-item"><span>Mean Depth:</span> ${lakeInfo.meanDepth}</div>
-    `;
-    
-    // Special designations
-    if (lakeInfo.isSentinel) {
-      html += `<div class="lake-detail-item"><span>Sentinel Lake:</span> Yes</div>`;
-    }
-    
-    if (lakeInfo.isBorder) {
-      html += `<div class="lake-detail-item"><span>Border Water:</span> Yes</div>`;
-    }
-    
-    // Update the element
-    lakeDetailsElement.innerHTML = html;
-  }
-};
 
-// Export the module
-window.MapManager = MapManager; 
+    // Calculate marker size based on lake area
+    calculateMarkerSize(areaAcres) {
+        // Base size for visibility
+        const baseSize = 3;
+        
+        // No area data
+        if (!areaAcres) return baseSize;
+        
+        // Scale based on area, with a max size
+        const size = baseSize + Math.min(Math.sqrt(areaAcres) / 15, 12);
+        return size;
+    }
+
+    // Handle lake marker click
+    async onLakeMarkerClick(lake) {
+        // Highlight selected lake
+        this.highlightSelectedLake(lake.id);
+        
+        // Store selected lake
+        this.selectedLake = lake;
+        
+        // Load detailed data for this lake
+        const lakeDetails = await dataLoader.loadLakeDetails(lake.id);
+        
+        // Notify callbacks
+        this.notifyLakeSelected(lake, lakeDetails);
+    }
+
+    // Highlight the selected lake marker
+    highlightSelectedLake(lakeId) {
+        // Reset all markers to default style
+        this.markers.forEach(markerData => {
+            markerData.marker.setStyle({
+                color: '#0077be',
+                fillColor: '#0077be',
+                fillOpacity: 0.6,
+                weight: 1
+            });
+        });
+        
+        // Highlight selected marker
+        const selectedMarker = this.markers.find(m => m.id === lakeId);
+        if (selectedMarker) {
+            selectedMarker.marker.setStyle({
+                color: '#ff4500',
+                fillColor: '#ff4500',
+                fillOpacity: 0.8,
+                weight: 2
+            });
+            
+            // Bring to front
+            selectedMarker.marker.bringToFront();
+        }
+    }
+
+    // Clear all markers from the map
+    clearMarkers() {
+        if (this.markerCluster) {
+            this.map.removeLayer(this.markerCluster);
+            this.markerCluster = null;
+        }
+        this.markers = [];
+    }
+
+    // Register callback for lake selection
+    onLakeSelected(callback) {
+        this.onLakeSelectedCallbacks.push(callback);
+    }
+
+    // Notify all callbacks that a lake was selected
+    notifyLakeSelected(lake, lakeDetails) {
+        this.onLakeSelectedCallbacks.forEach(callback => callback(lake, lakeDetails));
+    }
+
+    // Filter lakes by county
+    filterByCounty(county) {
+        // Clear existing markers
+        this.clearMarkers();
+        
+        // Get lakes for the selected county
+        const filteredLakes = dataLoader.getLakesByCounty(county);
+        
+        // Create a marker cluster group
+        this.markerCluster = L.markerClusterGroup({
+            maxClusterRadius: 50,
+            disableClusteringAtZoom: 10,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
+        });
+        
+        // Add markers for filtered lakes
+        filteredLakes.forEach(lake => {
+            if (lake.latitude && lake.longitude) {
+                const marker = L.circleMarker([lake.latitude, lake.longitude], {
+                    radius: this.calculateMarkerSize(lake.area_acres),
+                    color: '#0077be',
+                    fillColor: '#0077be',
+                    fillOpacity: 0.6,
+                    weight: 1
+                });
+                
+                // Add popup with basic lake info
+                marker.bindTooltip(`${lake.name}<br>${lake.county} County<br>${lake.area_acres} acres`);
+                
+                // Add click handler
+                marker.on('click', () => this.onLakeMarkerClick(lake));
+                
+                // Add marker to cluster and store reference
+                this.markerCluster.addLayer(marker);
+                this.markers.push({
+                    id: lake.id,
+                    marker: marker
+                });
+            }
+        });
+        
+        // Add the marker cluster to the map
+        this.map.addLayer(this.markerCluster);
+        
+        // If we filtered to a specific county, zoom to fit those lakes
+        if (county && filteredLakes.length > 0) {
+            const latLngs = filteredLakes
+                .filter(lake => lake.latitude && lake.longitude)
+                .map(lake => [lake.latitude, lake.longitude]);
+            
+            if (latLngs.length > 0) {
+                this.map.fitBounds(L.latLngBounds(latLngs), {
+                    padding: [50, 50]
+                });
+            }
+        } else {
+            // Reset view to Minnesota
+            this.map.setView([46.5, -94.5], 7);
+        }
+    }
+
+    // Search for lakes by name
+    searchByName(query) {
+        if (!query) {
+            // If query is empty, show all lakes
+            this.addLakeMarkers();
+            return;
+        }
+        
+        // Clear existing markers
+        this.clearMarkers();
+        
+        // Search lakes by name
+        const searchResults = dataLoader.searchLakesByName(query);
+        
+        // Create a marker cluster group
+        this.markerCluster = L.markerClusterGroup({
+            maxClusterRadius: 50,
+            disableClusteringAtZoom: 10,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
+        });
+        
+        // Add markers for search results
+        searchResults.forEach(lake => {
+            if (lake.latitude && lake.longitude) {
+                const marker = L.circleMarker([lake.latitude, lake.longitude], {
+                    radius: this.calculateMarkerSize(lake.area_acres),
+                    color: '#0077be',
+                    fillColor: '#0077be',
+                    fillOpacity: 0.6,
+                    weight: 1
+                });
+                
+                // Add popup with basic lake info
+                marker.bindTooltip(`${lake.name}<br>${lake.county} County<br>${lake.area_acres} acres`);
+                
+                // Add click handler
+                marker.on('click', () => this.onLakeMarkerClick(lake));
+                
+                // Add marker to cluster and store reference
+                this.markerCluster.addLayer(marker);
+                this.markers.push({
+                    id: lake.id,
+                    marker: marker
+                });
+            }
+        });
+        
+        // Add the marker cluster to the map
+        this.map.addLayer(this.markerCluster);
+        
+        // If we have search results, zoom to fit them
+        if (searchResults.length > 0) {
+            const latLngs = searchResults
+                .filter(lake => lake.latitude && lake.longitude)
+                .map(lake => [lake.latitude, lake.longitude]);
+            
+            if (latLngs.length > 0) {
+                this.map.fitBounds(L.latLngBounds(latLngs), {
+                    padding: [50, 50]
+                });
+            }
+        }
+        
+        return searchResults;
+    }
+}
+
+// Create and export a singleton instance
+export default LakeMap; 

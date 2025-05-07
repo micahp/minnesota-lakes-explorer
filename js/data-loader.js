@@ -1,154 +1,167 @@
-/**
- * Data loader for Minnesota Lakes Explorer
- * Handles loading and parsing the CSV data files
- */
+// Data loader for Minnesota Lake Explorer
+// Handles loading and processing lake and fish data
 
-const DataLoader = {
-  // Store all the lake data
-  lakes: [],
-  fishCatch: {},
-  fishLength: {},
-  sentinelLakes: [],
-  borderLakes: [],
-  
-  // Store filter options derived from data
-  counties: new Set(),
-  fishSpecies: new Set(),
-  
-  // Min/max values for lake area
-  minArea: 0,
-  maxArea: 0,
-  
-  /**
-   * Initialize the data loader and load all data files
-   * @returns {Promise} Promise that resolves when all data is loaded
-   */
-  init: async function() {
-    try {
-      // Load and process the consolidated lake data
-      await this.loadLakeData();
-      
-      // Display count of loaded lakes
-      console.log(`Loaded ${this.lakes.length} lakes`);
-      
-      return true;
-    } catch (error) {
-      console.error('Error loading data:', error);
-      return false;
+class DataLoader {
+    constructor() {
+        this.lakes = [];
+        this.fishCatch = {};
+        this.fishLength = {};
+        this.fishSpecies = {};
+        this.dataLoaded = false;
+        this.onDataLoadedCallbacks = [];
     }
-  },
-  
-  /**
-   * Load the consolidated lake data CSV
-   */
-  loadLakeData: async function() {
-    return new Promise((resolve, reject) => {
-      Papa.parse('consolidated_lake_data.csv', {
-        download: true,
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          if (results.errors.length > 0) {
-            console.error('Errors parsing lake data:', results.errors);
-            reject(results.errors);
-            return;
-          }
-          
-          // Filter out lakes without lat/lon or with invalid coordinates
-          this.lakes = results.data.filter(lake => {
-            return lake.LAKE_CENTER_LAT_DD5 && 
-                   lake.LAKE_CENTER_LONG_DD5 &&
-                   lake.LAKE_AREA_DOW_ACRES >= 10;
-          });
-          
-          // Extract counties and other filter options
-          this.lakes.forEach(lake => {
-            if (lake.COUNTY_NAME) {
-              this.counties.add(lake.COUNTY_NAME);
-            }
-            
-            // Mark sentinel and border lakes
-            if (lake.SENTINEL_LAKE === 'Yes') {
-              this.sentinelLakes.push(lake.DOW);
-            }
-            
-            if (lake.BORDER_WATER === 'Yes') {
-              this.borderLakes.push(lake.DOW);
-            }
-          });
-          
-          // Sort counties alphabetically
-          this.counties = Array.from(this.counties).sort();
-          
-          // Calculate min/max area
-          this.minArea = Math.min(...this.lakes.map(lake => lake.LAKE_AREA_DOW_ACRES));
-          this.maxArea = Math.max(...this.lakes.map(lake => lake.LAKE_AREA_DOW_ACRES));
-          
-          resolve();
-        },
-        error: (error) => {
-          console.error('Error loading lake data:', error);
-          reject(error);
-        }
-      });
-    });
-  },
-  
-  /**
-   * Filter lakes based on the provided criteria
-   * @param {Object} filters - Filter criteria (county, area range, fish species)
-   * @returns {Array} Filtered lakes array
-   */
-  filterLakes: function(filters) {
-    return this.lakes.filter(lake => {
-      // County filter
-      if (filters.county && filters.county !== 'all' && lake.COUNTY_NAME !== filters.county) {
-        return false;
-      }
-      
-      // Area filter
-      if (lake.LAKE_AREA_DOW_ACRES < filters.minArea || lake.LAKE_AREA_DOW_ACRES > filters.maxArea) {
-        return false;
-      }
-      
-      // Fish species filter - will be implemented when we load species data
-      
-      return true;
-    });
-  },
-  
-  /**
-   * Get lake details by DOW ID
-   * @param {string} dowId - The DOW ID of the lake
-   * @returns {Object|null} Lake object or null if not found
-   */
-  getLakeById: function(dowId) {
-    return this.lakes.find(lake => lake.DOW === dowId) || null;
-  },
-  
-  /**
-   * Format lake data for display in UI
-   * @param {Object} lake - Lake object
-   * @returns {Object} Formatted lake info
-   */
-  formatLakeInfo: function(lake) {
-    return {
-      name: lake.LAKE_NAME || 'Unknown',
-      id: lake.DOW || 'Unknown',
-      county: lake.COUNTY_NAME || 'Unknown',
-      nearestTown: lake.NEAREST_TOWN || '',
-      area: lake.LAKE_AREA_DOW_ACRES ? `${lake.LAKE_AREA_DOW_ACRES.toFixed(1)} acres` : 'Unknown',
-      shoreline: lake.SHORELINE_LENGTH_MILES ? `${lake.SHORELINE_LENGTH_MILES.toFixed(1)} miles` : 'Unknown',
-      maxDepth: lake.MAX_DEPTH_FEET ? `${lake.MAX_DEPTH_FEET.toFixed(1)} ft` : 'Unknown',
-      meanDepth: lake.MEAN_DEPTH_FEET ? `${lake.MEAN_DEPTH_FEET.toFixed(1)} ft` : 'Unknown',
-      isSentinel: this.sentinelLakes.includes(lake.DOW),
-      isBorder: this.borderLakes.includes(lake.DOW),
-      latitude: lake.LAKE_CENTER_LAT_DD5,
-      longitude: lake.LAKE_CENTER_LONG_DD5
-    };
-  }
-};
 
-// Export the module
-window.DataLoader = DataLoader; 
+    // Load basic lake data
+    async loadLakeData() {
+        try {
+            const response = await fetch('data/lakes.json');
+            this.lakes = await response.json();
+            console.log(`Loaded ${this.lakes.length} lakes`);
+            return this.lakes;
+        } catch (error) {
+            console.error('Error loading lake data:', error);
+            return [];
+        }
+    }
+
+    // Load fish species reference data
+    async loadFishSpecies() {
+        try {
+            const response = await fetch('data/fish_species.json');
+            this.fishSpecies = await response.json();
+            console.log(`Loaded ${Object.keys(this.fishSpecies).length} fish species`);
+            return this.fishSpecies;
+        } catch (error) {
+            console.error('Error loading fish species data:', error);
+            return {};
+        }
+    }
+
+    // Load all data needed for initial map display
+    async loadInitialData() {
+        await Promise.all([
+            this.loadLakeData(),
+            this.loadFishSpecies()
+        ]);
+        
+        this.dataLoaded = true;
+        this.notifyDataLoaded();
+        return {
+            lakes: this.lakes,
+            fishSpecies: this.fishSpecies
+        };
+    }
+
+    // Load fish catch data for a specific lake
+    async loadLakeFishCatch(lakeId) {
+        if (this.fishCatch[lakeId]) {
+            return this.fishCatch[lakeId];
+        }
+
+        try {
+            if (!this.allFishCatch) {
+                const response = await fetch('data/fish_catch.json');
+                this.allFishCatch = await response.json();
+            }
+            
+            this.fishCatch[lakeId] = this.allFishCatch[lakeId] || {};
+            return this.fishCatch[lakeId];
+        } catch (error) {
+            console.error(`Error loading fish catch data for lake ${lakeId}:`, error);
+            return {};
+        }
+    }
+
+    // Load fish length data for a specific lake
+    async loadLakeFishLength(lakeId) {
+        if (this.fishLength[lakeId]) {
+            return this.fishLength[lakeId];
+        }
+
+        try {
+            if (!this.allFishLength) {
+                const response = await fetch('data/fish_length.json');
+                this.allFishLength = await response.json();
+            }
+            
+            this.fishLength[lakeId] = this.allFishLength[lakeId] || {};
+            return this.fishLength[lakeId];
+        } catch (error) {
+            console.error(`Error loading fish length data for lake ${lakeId}:`, error);
+            return {};
+        }
+    }
+
+    // Load all data for a specific lake
+    async loadLakeDetails(lakeId) {
+        const [fishCatch, fishLength] = await Promise.all([
+            this.loadLakeFishCatch(lakeId),
+            this.loadLakeFishLength(lakeId)
+        ]);
+
+        return {
+            fishCatch,
+            fishLength
+        };
+    }
+
+    // Get lake by ID
+    getLakeById(lakeId) {
+        return this.lakes.find(lake => lake.id === lakeId);
+    }
+
+    // Get fish species by code
+    getFishSpecies(speciesCode) {
+        return this.fishSpecies[speciesCode] || { 
+            name: `Unknown (${speciesCode})`, 
+            scientific_name: 'Species data not available' 
+        };
+    }
+
+    // Register callback for when data is loaded
+    onDataLoaded(callback) {
+        if (this.dataLoaded) {
+            callback();
+        } else {
+            this.onDataLoadedCallbacks.push(callback);
+        }
+    }
+
+    // Notify all callbacks that data is loaded
+    notifyDataLoaded() {
+        this.onDataLoadedCallbacks.forEach(callback => callback());
+        this.onDataLoadedCallbacks = [];
+    }
+
+    // Search lakes by name
+    searchLakesByName(query) {
+        if (!query) return [];
+        
+        const lowerQuery = query.toLowerCase();
+        return this.lakes.filter(lake => 
+            lake.name.toLowerCase().includes(lowerQuery) || 
+            (lake.alternate_name && lake.alternate_name.toLowerCase().includes(lowerQuery))
+        );
+    }
+
+    // Filter lakes by county
+    getLakesByCounty(county) {
+        if (!county) return this.lakes;
+        return this.lakes.filter(lake => lake.county === county);
+    }
+
+    // Get all unique counties
+    getAllCounties() {
+        const counties = new Set();
+        this.lakes.forEach(lake => {
+            if (lake.county) {
+                counties.add(lake.county);
+            }
+        });
+        return Array.from(counties).sort();
+    }
+}
+
+// Create and export a singleton instance
+const dataLoader = new DataLoader();
+export default dataLoader; 
