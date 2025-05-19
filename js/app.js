@@ -1,5 +1,5 @@
 // Main application logic for Minnesota Lake Explorer
-import LakeMap from './map.js';
+import lakeMapInstance from './map.js';
 import dataLoader from './data-loader.js';
 
 // Initialize application when DOM is loaded
@@ -9,20 +9,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Initialize the application
 async function initApp() {
-    // Create map instance
-    const lakeMap = new LakeMap('map');
-    await lakeMap.initialize();
+    // Use the imported singleton instance directly
+    await lakeMapInstance.initialize();
     
     // Set up UI event handlers
-    setupUIHandlers(lakeMap);
+    setupUIHandlers(lakeMapInstance);
     
     // Set up lake selection handler
-    lakeMap.onLakeSelected((lake, lakeDetails) => {
+    lakeMapInstance.onLakeSelected((lake, lakeDetails) => {
         displayLakeDetails(lake, lakeDetails);
     });
     
     // Initialize county filter dropdown
-    initializeCountyFilter(lakeMap);
+    initializeCountyFilter(lakeMapInstance);
 }
 
 // Set up UI event handlers
