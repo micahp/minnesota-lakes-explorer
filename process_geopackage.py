@@ -1,6 +1,8 @@
 import geopandas as gpd
 import json
 from pathlib import Path
+import subprocess # Added for running Tippecanoe
+import os # Added for removing temporary file
 # No need to import fiona explicitly if not used directly
 
 def clean_county_name(county_name):
@@ -169,7 +171,7 @@ def process_geopackage():
     print(f"Processed and saved {len(lakes_geojson_export_gdf)} lakes to {output_path_geojson}")
 
     # --- Create data/lakes.json (metadata only) ---
-    print("\\nExtracting lake metadata for data/lakes.json...")
+    print("\nExtracting lake metadata for data/lakes.json...")
     # Define columns for the metadata JSON file (no geometry)
     # These should match what the frontend expects (e.g., in displayLakeDetails, DataLoader)
     lake_metadata_columns = ['DNR_ID', 'name', 'county', 'area_acres', 'shore_length_mi']
@@ -207,7 +209,80 @@ def process_geopackage():
     
     print(f"Saved metadata for {len(cleaned_lake_metadata)} lakes to {metadata_output_path_json}")
     
-    return {"geojson_path": str(output_path_geojson), "metadata_json_path": str(metadata_output_path_json)}
+    # --- Part 3: Generate Vector Tiles using Tippecanoe ---
+    print("\nGenerating vector tiles with Tippecanoe...")
+    # Define columns needed for tiling (geometry is implicit)
+    # These attributes will be available in the vector tiles.
+    # Ensure properties used for interaction (e.g. DNR_ID for fetching details) are included.
+    # And properties for potential styling (e.g. name, county) are also useful.
+    tile_attributes = ['DNR_ID', 'name', 'county'] # Add more if needed for direct tile styling, e.g. area_acres
+    
+    # Select only the necessary columns for the GeoJSON input to Tippecanoe to keep it minimal
+    # Geometry column is implicitly handled by to_json() when creating GeoJSON.
+    # Tippecanoe will read properties from the GeoJSON features.
+    columns_for_tile_geojson = ['geometry'] + [col for col in tile_attributes if col in lakes_gdf.columns]
+    
+    # Ensure geometry is still valid before this step if any prior ops could invalidate it
+    # This gdf should be the main `lakes_gdf` which has all lakes and properties.
+    if not lakes_gdf['geometry'].is_valid.all():
+        print("Warning: Invalid geometries found before Tippecanoe step. Attempting to clean...")
+        # Use a copy to avoid issues if lakes_gdf is used elsewhere or if buffer changes types unexpectedly
+        temp_tile_gdf = lakes_gdf.copy()
+        temp_tile_gdf['geometry'] = temp_tile_gdf['geometry'].buffer(0)
+        if not temp_tile_gdf['geometry'].is_valid.all():
+            print("Error: Invalid geometries persist after cleaning for vector tiles. Filtering them out.")
+            temp_tile_gdf = temp_tile_gdf[temp_tile_gdf['geometry'].is_valid].copy()
+        tile_input_gdf = temp_tile_gdf[columns_for_tile_geojson]
+    else:
+        tile_input_gdf = lakes_gdf[columns_for_tile_geojson].copy() # Use a copy
+
+    temp_geojson_for_tiles_path = Path('data/temp_lakes_for_tiles.geojson')
+    print(f"Saving temporary GeoJSON for Tippecanoe to {temp_geojson_for_tiles_path}...")
+    # Ensure no NaN/NaT values are passed to to_json for properties, as they can cause issues or become strings "NaN"
+    # For properties, fillna with None (which becomes null) or an appropriate string like "Unknown"
+    # For simplicity, let's assume our selected tile_attributes (DNR_ID, name, county) are already cleaned strings or handle None correctly.
+    # If DNR_ID could be numeric and missing, ensure it's handled (e.g. cast to string, or fillna if it was object type)
+    # Our current cleaning for 'name' uses 'Unknown Name', 'county' uses None for missing. DNR_ID can be None.
+    tile_input_gdf.to_file(str(temp_geojson_for_tiles_path), driver='GeoJSON')
+
+    mbtiles_output_path = Path('data/lake_tiles.mbtiles')
+    tippecanoe_cmd = [
+        'tippecanoe',
+        '-o', str(mbtiles_output_path),    # Output MBTiles file
+        '-l', 'lakes',                     # Layer name in the tileset
+        '--force',                         # Overwrite if mbtiles file exists
+        '--no-tile-compression',         # Helps with some Leaflet plugins
+        '--simplification=2',            # Simplification factor (higher means more simplification)
+        '-zg',                             # Auto-determine max zoom from density
+        '--minimum-zoom=5',                # Set a reasonable minimum zoom for lakes to appear
+        '--drop-densest-as-needed',      # Standard density management
+        '--extend-zooms-if-still-dropping', # Try to push features to higher zooms if still too dense
+        # Attributes from the GeoJSON properties will be included by default.
+        # If specific includes/excludes are needed, add flags like:
+        # '--include=DNR_ID', '--include=name', etc.
+        str(temp_geojson_for_tiles_path) # Input GeoJSON file
+    ]
+
+    print(f"Running Tippecanoe: {' '.join(tippecanoe_cmd)}")
+    try:
+        subprocess.run(tippecanoe_cmd, check=True, capture_output=True, text=True)
+        print(f"Tippecanoe successfully generated {mbtiles_output_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"Error running Tippecanoe:")
+        print(f"Return code: {e.returncode}")
+        print(f"Stdout: {e.stdout}")
+        print(f"Stderr: {e.stderr}")
+        # Decide if to return or raise
+    finally:
+        print(f"Removing temporary GeoJSON: {temp_geojson_for_tiles_path}")
+        if temp_geojson_for_tiles_path.exists():
+            os.remove(temp_geojson_for_tiles_path)
+
+    return {
+        "geojson_path": str(output_path_geojson),
+        "metadata_json_path": str(metadata_output_path_json),
+        "mbtiles_path": str(mbtiles_output_path) if mbtiles_output_path.exists() else None
+    }
 
 if __name__ == '__main__':
     # inspect_geopackage_details() 
