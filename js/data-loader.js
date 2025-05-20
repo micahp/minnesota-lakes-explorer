@@ -160,6 +160,36 @@ class DataLoader {
         });
         return Array.from(counties).sort();
     }
+
+    // New method to get county bounds by name
+    getCountyBounds(countyName) {
+        if (!countyName || !this.countyFeatures || this.countyFeatures.size === 0) {
+            console.warn('getCountyBounds called with no county name or countyFeatures not loaded.');
+            return null;
+        }
+        // Normalize the input county name to match the keys in countyFeatures (e.g., uppercase)
+        const normalizedCountyName = countyName.toUpperCase(); 
+        const feature = this.countyFeatures.get(normalizedCountyName);
+
+        if (feature) {
+            try {
+                // L (Leaflet) is expected to be globally available when this method is called from map.js
+                if (typeof L !== 'undefined' && L.geoJSON) {
+                    const geoJsonLayer = L.geoJSON(feature); // Create a temporary GeoJSON layer
+                    return geoJsonLayer.getBounds();       // Get bounds from this layer
+                } else {
+                    console.error('Leaflet (L) or L.geoJSON is not available. Cannot calculate county bounds.');
+                    return null;
+                }
+            } catch (e) {
+                console.error(`Error calculating bounds for county ${countyName}:`, e);
+                return null;
+            }
+        } else {
+            console.warn(`County feature not found for: ${normalizedCountyName} (Input: ${countyName})`);
+            return null;
+        }
+    }
 }
 
 // Create and export a singleton instance

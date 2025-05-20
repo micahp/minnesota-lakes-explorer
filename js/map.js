@@ -117,15 +117,32 @@ class LakeMap {
     async onLakeClick(lakeDataFromFeature) {
         console.log("onLakeClick received:", lakeDataFromFeature);
 
+        // Pan/zoom to the lake's location first
+        if (lakeDataFromFeature && typeof lakeDataFromFeature.center_lat === 'number' && typeof lakeDataFromFeature.center_lon === 'number') {
+            const zoomLevel = this.map.getZoom() < 10 ? 13 : this.map.getZoom(); // Zoom in if map is too zoomed out, else keep current zoom
+            this.map.flyTo([lakeDataFromFeature.center_lat, lakeDataFromFeature.center_lon], zoomLevel);
+            console.log(`Map flying to: [${lakeDataFromFeature.center_lat}, ${lakeDataFromFeature.center_lon}] at zoom ${zoomLevel}`);
+        } else {
+            console.warn("onLakeClick: Lake data missing center_lat or center_lon. Cannot pan map.", lakeDataFromFeature);
+        }
+
         try {
-            const lakeDetails = await dataLoader.loadLakeDetails(lakeDataFromFeature.id);
+            const lakeId = lakeDataFromFeature.id || lakeDataFromFeature.DNR_ID; // Handle both possible ID property names
+            if (!lakeId) {
+                console.error("onLakeClick: Lake data missing ID. Cannot fetch details.", lakeDataFromFeature);
+                this.notifyLakeSelected(lakeDataFromFeature, {}); // Notify with what we have
+                return;
+            }
+
+            const lakeDetails = await dataLoader.loadLakeDetails(lakeId);
             console.log("Details from dataLoader.loadLakeDetails:", lakeDetails);
             
-            const basicInfoForDisplay = dataLoader.getLakeById(lakeDataFromFeature.id) || lakeDataFromFeature;
+            const basicInfoForDisplay = dataLoader.getLakeById(lakeId) || lakeDataFromFeature;
 
             this.notifyLakeSelected({ ...basicInfoForDisplay, ...lakeDetails.basicInfo }, lakeDetails.surveyData);
         } catch (error) {
-             console.error(`Error loading details for lake ID ${lakeDataFromFeature.id}:`, error);
+             const lakeId = lakeDataFromFeature.id || lakeDataFromFeature.DNR_ID;
+             console.error(`Error loading details for lake ID ${lakeId}:`, error);
              this.notifyLakeSelected(lakeDataFromFeature, {}); 
         }
     }
@@ -145,19 +162,37 @@ class LakeMap {
         this.selectedCounty = county || null;
 
         if (this.vectorLayer && typeof this.vectorLayer.redraw === 'function') {
-            this.vectorLayer.redraw();
+            this.vectorLayer.redraw(); // Redraw to show/hide lakes based on selectedCounty
         }
         
         if (this.selectedCounty) {
-            const lakesInCounty = dataLoader.getLakesByCounty(this.selectedCounty);
-            console.log(`Found ${lakesInCounty.length} lakes in ${this.selectedCounty} (from metadata).`);
-            if (lakesInCounty.length > 0) {
-                const firstLake = dataLoader.getLakeById(lakesInCounty[0].DNR_ID);
-                if (firstLake && firstLake.center_lat && firstLake.center_lon) { 
-                     this.map.setView([firstLake.center_lat, firstLake.center_lon], 10); 
+            // Try to get bounds from dataLoader
+            const countyBounds = dataLoader.getCountyBounds(this.selectedCounty);
+            if (countyBounds && countyBounds.isValid()) { // Ensure bounds are valid
+                console.log(`Fitting map to bounds for ${this.selectedCounty}:`, countyBounds);
+                this.map.fitBounds(countyBounds);
+            } else {
+                // Fallback if bounds are not found or invalid for the selected county
+                console.warn(`Could not find valid bounds for county: ${this.selectedCounty}. Falling back to default view or first lake logic if desired.`);
+                // Previous logic (zoom to first lake) can be reinstated here as a further fallback if needed,
+                // but for now, we'll go to a general view if specific county bounds aren't available.
+                // For example, could try to find *any* lake in the county if bounds failed but county is valid
+                const lakesInCounty = dataLoader.getLakesByCounty(this.selectedCounty);
+                if (lakesInCounty.length > 0) {
+                    const firstLake = dataLoader.getLakeById(lakesInCounty[0].DNR_ID);
+                    if (firstLake && firstLake.center_lat && firstLake.center_lon) { 
+                         console.log(`No bounds found, centering on first lake: ${firstLake.name}`);
+                         this.map.setView([firstLake.center_lat, firstLake.center_lon], 10); 
+                    } else {
+                        this.map.setView([46.5, -94.5], 11); // Default if first lake has no coords
+                    }
+                } else {
+                     this.map.setView([46.5, -94.5], 11); // Default if no lakes in county (or county invalid)
                 }
             }
         } else {
+            // No county selected, reset to default view
+            console.log('No county selected. Resetting map view to default.');
             this.map.setView([46.5, -94.5], 11);
         }
     }
