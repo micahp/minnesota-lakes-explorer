@@ -34,7 +34,6 @@ function setupUIHandlers(lakeMap) {
     searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const query = searchInput.value.trim();
-        // lakeMap.searchByName now just returns data, doesn't interact with map directly
         const results = lakeMap.searchByName(query); 
         
         if (resultsCountEl) {
@@ -45,6 +44,8 @@ function setupUIHandlers(lakeMap) {
                 resultsCountEl.style.display = 'none';
             }
         }
+        // Add border when search is performed
+        searchResultsListEl.classList.add('search-results-border');
         displaySearchResultsList(results, lakeMap, searchResultsListEl);
     });
 
@@ -53,10 +54,11 @@ function setupUIHandlers(lakeMap) {
         clearSearchBtn.addEventListener('click', () => {
             searchInput.value = '';
             if (resultsCountEl) resultsCountEl.style.display = 'none';
-            if (searchResultsListEl) searchResultsListEl.innerHTML = ''; // Clear results list
+            if (searchResultsListEl) {
+                searchResultsListEl.innerHTML = ''; // Clear results list
+                searchResultsListEl.classList.remove('search-results-border'); // Remove border
+            }
             
-            // Optionally, reset map or close details panel further if desired
-            // lakeMap.filterByCounty(null); // This would reset to all counties view
             const detailsPanel = document.getElementById('lake-details');
             if (detailsPanel) detailsPanel.classList.remove('active');
         });
@@ -74,32 +76,55 @@ function setupUIHandlers(lakeMap) {
 // New function to display search results in a list
 function displaySearchResultsList(results, lakeMap, listElement) {
     listElement.innerHTML = ''; // Clear previous results
+    const resultsCountEl = document.getElementById('results-count'); // Get once for potential use
 
     if (!results || results.length === 0) {
         listElement.innerHTML = '<div class=\"search-result-item\">No lakes found.</div>';
+        // Border is added by the submit handler, so it will be present here as desired.
         return;
     }
 
-    results.forEach((lake, index) => {
+    // 1. Build and append all list items and attach their event listeners
+    results.forEach((lake) => {
         const item = document.createElement('div');
         item.classList.add('search-result-item');
         item.textContent = `${lake.name} (${lake.county || 'N/A'})`;
         item.dataset.lakeId = lake.DNR_ID; // Store ID for potential use
 
         item.addEventListener('click', () => {
-            lakeMap.onLakeClick(lake); // This will pan/zoom and show details
+            // This handler is for ACTUAL user clicks on any item.
+            lakeMap.onLakeClick(lake); // Pan/zoom and show details for the clicked lake
 
-            // Highlight active item in the list
+            // Visually update active state in the list
             listElement.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('active'));
             item.classList.add('active');
+
+            // If there were originally multiple results, hide the list and count now.
+            if (results.length > 1) {
+                listElement.innerHTML = ''; // Clear the list
+                if (resultsCountEl) {
+                    resultsCountEl.style.display = 'none'; // Hide the count message
+                }
+                listElement.classList.remove('search-results-border'); // Remove border when list is cleared
+            }
         });
         listElement.appendChild(item);
-
-        // Automatically select (visually and functionally) the first item
-        if (index === 0) {
-            item.click(); 
-        }
     });
+
+    // 2. After all items are in the DOM, if there are results, 
+    //    automatically select the first one functionally and visually.
+    //    This does NOT clear the list.
+    if (results.length > 0) {
+        const firstLakeData = results[0];
+        lakeMap.onLakeClick(firstLakeData); // Show details for the first lake
+
+        // Visually highlight the first item in the list
+        if (listElement.firstChild && listElement.firstChild.classList) { // Ensure firstChild is an element
+            // Clear any previous active states from other items first, then set the new one.
+            listElement.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('active'));
+            listElement.firstChild.classList.add('active');
+        }
+    }
 }
 
 // Initialize county filter dropdown
