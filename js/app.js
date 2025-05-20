@@ -26,41 +26,42 @@ async function initApp() {
 
 // Set up UI event handlers
 function setupUIHandlers(lakeMap) {
-    // Search form
     const searchForm = document.getElementById('search-form');
     const searchInput = document.getElementById('search-input');
-    
+    const resultsCountEl = document.getElementById('results-count');
+    const searchResultsListEl = document.getElementById('search-results-list');
+
     searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const query = searchInput.value.trim();
-        const results = lakeMap.searchByName(query);
+        // lakeMap.searchByName now just returns data, doesn't interact with map directly
+        const results = lakeMap.searchByName(query); 
         
-        // Display search results count
-        const resultsCount = document.getElementById('results-count');
-        if (query && resultsCount) {
-            resultsCount.textContent = `Found ${results.length} lakes matching "${query}"`;
-            resultsCount.style.display = 'block';
-        } else if (resultsCount) {
-            resultsCount.style.display = 'none';
+        if (resultsCountEl) {
+            if (query) {
+                resultsCountEl.textContent = `Found ${results.length} lakes matching "${query}"`;
+                resultsCountEl.style.display = 'block';
+            } else {
+                resultsCountEl.style.display = 'none';
+            }
         }
+        displaySearchResultsList(results, lakeMap, searchResultsListEl);
     });
-    
-    // Clear search button
+
     const clearSearchBtn = document.getElementById('clear-search');
     if (clearSearchBtn) {
         clearSearchBtn.addEventListener('click', () => {
             searchInput.value = '';
-            lakeMap.addLakeMarkers();
+            if (resultsCountEl) resultsCountEl.style.display = 'none';
+            if (searchResultsListEl) searchResultsListEl.innerHTML = ''; // Clear results list
             
-            // Hide results count
-            const resultsCount = document.getElementById('results-count');
-            if (resultsCount) {
-                resultsCount.style.display = 'none';
-            }
+            // Optionally, reset map or close details panel further if desired
+            // lakeMap.filterByCounty(null); // This would reset to all counties view
+            const detailsPanel = document.getElementById('lake-details');
+            if (detailsPanel) detailsPanel.classList.remove('active');
         });
     }
     
-    // Close details panel button
     const closeDetailsBtn = document.getElementById('close-details');
     if (closeDetailsBtn) {
         closeDetailsBtn.addEventListener('click', () => {
@@ -68,6 +69,37 @@ function setupUIHandlers(lakeMap) {
             detailsPanel.classList.remove('active');
         });
     }
+}
+
+// New function to display search results in a list
+function displaySearchResultsList(results, lakeMap, listElement) {
+    listElement.innerHTML = ''; // Clear previous results
+
+    if (!results || results.length === 0) {
+        listElement.innerHTML = '<div class=\"search-result-item\">No lakes found.</div>';
+        return;
+    }
+
+    results.forEach((lake, index) => {
+        const item = document.createElement('div');
+        item.classList.add('search-result-item');
+        item.textContent = `${lake.name} (${lake.county || 'N/A'})`;
+        item.dataset.lakeId = lake.DNR_ID; // Store ID for potential use
+
+        item.addEventListener('click', () => {
+            lakeMap.onLakeClick(lake); // This will pan/zoom and show details
+
+            // Highlight active item in the list
+            listElement.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+        });
+        listElement.appendChild(item);
+
+        // Automatically select (visually and functionally) the first item
+        if (index === 0) {
+            item.click(); 
+        }
+    });
 }
 
 // Initialize county filter dropdown
@@ -104,7 +136,7 @@ function displayLakeDetails(lake, lakeDetails) {
     const fishInfo = document.getElementById('fish-info');
     
     // Set lake name
-    lakeName.textContent = lake.name;
+    lakeName.textContent = lake.name || 'Unknown Lake';
     
     // Build lake info HTML
     let infoHTML = `
@@ -113,19 +145,24 @@ function displayLakeDetails(lake, lakeDetails) {
             <table class="info-table">
                 <tr>
                     <th>County:</th>
-                    <td>${lake.county}</td>
-                </tr>
-                <tr>
-                    <th>Area:</th>
-                    <td>${lake.area_acres.toLocaleString()} acres</td>
+                    <td>${lake.county || 'Unknown'}</td>
                 </tr>
     `;
+    
+    if (lake.area_acres) {
+        infoHTML += `
+                <tr>
+                    <th>Area:</th>
+                    <td>${Number(lake.area_acres).toLocaleString()} acres</td>
+                </tr>
+        `;
+    }
     
     if (lake.max_depth_ft) {
         infoHTML += `
                 <tr>
                     <th>Max Depth:</th>
-                    <td>${lake.max_depth_ft} feet</td>
+                    <td>${Number(lake.max_depth_ft).toLocaleString()} feet</td>
                 </tr>
         `;
     }
@@ -134,7 +171,7 @@ function displayLakeDetails(lake, lakeDetails) {
         infoHTML += `
                 <tr>
                     <th>Mean Depth:</th>
-                    <td>${lake.mean_depth_ft} feet</td>
+                    <td>${Number(lake.mean_depth_ft).toLocaleString()} feet</td>
                 </tr>
         `;
     }
@@ -143,7 +180,7 @@ function displayLakeDetails(lake, lakeDetails) {
         infoHTML += `
                 <tr>
                     <th>Shoreline:</th>
-                    <td>${lake.shore_length_mi} miles</td>
+                    <td>${Number(lake.shore_length_mi).toLocaleString()} miles</td>
                 </tr>
         `;
     }
@@ -174,7 +211,7 @@ function displayLakeDetails(lake, lakeDetails) {
     lakeInfo.innerHTML = infoHTML;
     
     // Build fish info HTML
-    const { fishCatch, fishLength } = lakeDetails;
+    const { fishCatch = {}, fishLength = {} } = lakeDetails || {};
     let fishHTML = '';
     
     // Check if we have fish data
@@ -191,15 +228,15 @@ function displayLakeDetails(lake, lakeDetails) {
         const fishSpecies = Object.keys(fishCatch);
         
         fishSpecies.forEach(speciesCode => {
-            const speciesInfo = dataLoader.getFishSpecies(speciesCode);
-            const catchData = fishCatch[speciesCode];
+            const speciesInfo = dataLoader.getFishSpecies(speciesCode) || { name: 'Unknown Species', scientific_name: 'Unknown' };
+            const catchData = fishCatch[speciesCode] || [];
             
             // Calculate average CPUE (Catch Per Unit Effort)
             let totalCPUE = 0;
             let countCPUE = 0;
             
             catchData.forEach(catch_entry => {
-                if (catch_entry.cpue) {
+                if (catch_entry && catch_entry.cpue) {
                     totalCPUE += catch_entry.cpue;
                     countCPUE++;
                 }
@@ -208,7 +245,9 @@ function displayLakeDetails(lake, lakeDetails) {
             const avgCPUE = countCPUE > 0 ? (totalCPUE / countCPUE).toFixed(2) : 'N/A';
             
             // Get the most recent survey date
-            const surveyDates = catchData.map(entry => entry.survey_date).filter(Boolean);
+            const surveyDates = catchData
+                .filter(entry => entry && entry.survey_date)
+                .map(entry => entry.survey_date);
             const mostRecentSurvey = surveyDates.length > 0 ? 
                 new Date(Math.max(...surveyDates.map(date => new Date(date)))).toLocaleDateString() : 
                 'N/A';

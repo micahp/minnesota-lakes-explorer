@@ -107,7 +107,7 @@ class DataLoader {
 
     // Get lake by ID
     getLakeById(lakeId) {
-        return this.lakes.find(lake => lake.id === lakeId);
+        return this.lakes.find(lake => lake.DNR_ID === lakeId);
     }
 
     // Get fish species by code

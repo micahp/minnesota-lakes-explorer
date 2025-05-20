@@ -116,7 +116,36 @@ select {
     margin-top: 0.5rem;
     font-size: 0.85rem;
     color: #7f8c8d;
-    display: none;
+    /* display: none; // Keep this if you want to control visibility via JS */
+}
+
+/* Search results list styles */
+#search-results-list {
+    margin-top: 0.75rem;
+    max-height: 200px; /* Adjust as needed */
+    overflow-y: auto;
+    border: 1px solid #eee;
+    border-radius: 4px;
+}
+
+.search-result-item {
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.9rem;
+}
+
+.search-result-item:last-child {
+    border-bottom: none;
+}
+
+.search-result-item:hover {
+    background-color: #f5f5f5;
+}
+
+.search-result-item.active {
+    background-color: #e0eafc; /* A light blue to indicate active selection */
+    font-weight: 600;
 }
 
 /* Lake details panel */

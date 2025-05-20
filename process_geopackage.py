@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import subprocess # Added for running Tippecanoe
 import os # Added for removing temporary file
+import pandas as pd # Added for pd.to_numeric and pd.notna
 # No need to import fiona explicitly if not used directly
 
 def clean_county_name(county_name):
@@ -100,35 +101,48 @@ def process_geopackage():
 
     print("Standardizing properties...")
     
-    # DNR_ID
+    # DNR_ID - Ensure it's a string
     if 'dowlknum' in lakes_gdf.columns:
-        lakes_gdf['DNR_ID'] = lakes_gdf['dowlknum']
-        print("  Using 'dowlknum' as DNR_ID.")
+        # Convert to string, fill NA with a placeholder or handle appropriately if None is not desired
+        # For an ID, None might be acceptable if truly missing, but ensure type consistency.
+        lakes_gdf['DNR_ID'] = lakes_gdf['dowlknum'].astype(str).replace('<NA>', str(None)).replace('nan', str(None))
+        # A more robust way for potential pandas <NA> or numpy.nan when converting object columns to string:
+        lakes_gdf['DNR_ID'] = lakes_gdf['dowlknum'].apply(lambda x: str(x) if pd.notna(x) else None)
+        print("  Using 'dowlknum' as DNR_ID (ensured as string).")
     elif 'fw_id' in lakes_gdf.columns:
-        lakes_gdf['DNR_ID'] = lakes_gdf['fw_id']
-        print("  Warning: 'dowlknum' not found, falling back to 'fw_id' for DNR_ID.")
+        lakes_gdf['DNR_ID'] = lakes_gdf['fw_id'].apply(lambda x: str(x) if pd.notna(x) else None)
+        print("  Warning: 'dowlknum' not found, falling back to 'fw_id' for DNR_ID (ensured as string).")
     else:
-        lakes_gdf['DNR_ID'] = None
+        lakes_gdf['DNR_ID'] = None # This will be null in JSON, which is fine.
         print("  Warning: Neither 'dowlknum' nor 'fw_id' found. DNR_ID set to None.")
 
-    # Name
-    lakes_gdf['name'] = lakes_gdf['pw_basin_name'].fillna('Unknown Name').astype(str) if 'pw_basin_name' in lakes_gdf.columns else 'Unknown Name'
+    # Name - ensure string, handle missing
+    if 'pw_basin_name' in lakes_gdf.columns:
+        lakes_gdf['name'] = lakes_gdf['pw_basin_name'].apply(lambda x: str(x) if pd.notna(x) else 'Unknown Name')
+    else:
+        lakes_gdf['name'] = 'Unknown Name'
     print(f"  Name mapped from: {'pw_basin_name' if 'pw_basin_name' in lakes_gdf.columns else 'N/A'}")
 
-    # County (with cleaning)
+    # County (with cleaning) - clean_county_name should return string or None
     if 'cty_name' in lakes_gdf.columns:
-        lakes_gdf['county'] = lakes_gdf['cty_name'].apply(clean_county_name)
+        lakes_gdf['county'] = lakes_gdf['cty_name'].apply(clean_county_name) # Already handles Nones
         print("  County mapped from 'cty_name' and cleaned.")
     else:
         lakes_gdf['county'] = None
         print("  'cty_name' not found for County.")
 
-    # Area
-    lakes_gdf['area_acres'] = lakes_gdf['acres'] if 'acres' in lakes_gdf.columns else None
+    # Area - keep as numeric, will become number or null in JSON
+    if 'acres' in lakes_gdf.columns:
+        lakes_gdf['area_acres'] = pd.to_numeric(lakes_gdf['acres'], errors='coerce').fillna(gpd.pd.NA).astype('float64').where(pd.notna, None)
+    else:
+        lakes_gdf['area_acres'] = None
     print(f"  Area mapped from: {'acres' if 'acres' in lakes_gdf.columns else 'N/A'}")
     
-    # Shore Length
-    lakes_gdf['shore_length_mi'] = lakes_gdf['shore_mi'] if 'shore_mi' in lakes_gdf.columns else None
+    # Shore Length - keep as numeric
+    if 'shore_mi' in lakes_gdf.columns:
+        lakes_gdf['shore_length_mi'] = pd.to_numeric(lakes_gdf['shore_mi'], errors='coerce').fillna(gpd.pd.NA).astype('float64').where(pd.notna, None)
+    else:
+        lakes_gdf['shore_length_mi'] = None
     print(f"  Shore length mapped from: {'shore_mi' if 'shore_mi' in lakes_gdf.columns else 'N/A'}")
 
     # Properties for GeoJSON (includes geometry)
@@ -174,9 +188,25 @@ def process_geopackage():
     print("\nExtracting lake metadata for data/lakes.json...")
     # Define columns for the metadata JSON file (no geometry)
     # These should match what the frontend expects (e.g., in displayLakeDetails, DataLoader)
-    lake_metadata_columns = ['DNR_ID', 'name', 'county', 'area_acres', 'shore_length_mi']
+    lake_metadata_columns = ['DNR_ID', 'name', 'county', 'area_acres', 'shore_length_mi', 'center_lat', 'center_lon']
     # Max depth, mean depth, alternate name are confirmed not available in this GPKG layer.
     
+    # Calculate centroids before selecting columns for metadata
+    # Ensure the geometry column is valid and in a suitable projection (EPSG:4326 already done)
+    if 'geometry' in lakes_gdf.columns and not lakes_gdf.empty:
+        print("  Calculating centroids for lake metadata...")
+        # Use a temporary GDF to avoid UserWarning about CRS on Series
+        temp_centroids_gdf = lakes_gdf[['geometry']].copy()
+        temp_centroids_gdf['centroid_geom'] = temp_centroids_gdf.geometry.centroid
+        
+        lakes_gdf['center_lat'] = temp_centroids_gdf['centroid_geom'].apply(lambda p: p.y if p else None)
+        lakes_gdf['center_lon'] = temp_centroids_gdf['centroid_geom'].apply(lambda p: p.x if p else None)
+        print("  Finished calculating centroids.")
+    else:
+        print("  Skipping centroid calculation as geometry column is missing or GDF is empty.")
+        lakes_gdf['center_lat'] = None
+        lakes_gdf['center_lon'] = None
+
     actual_metadata_columns = [col for col in lake_metadata_columns if col in lakes_gdf.columns]
     
     if not actual_metadata_columns:
@@ -253,13 +283,11 @@ def process_geopackage():
         '--force',                         # Overwrite if mbtiles file exists
         '--no-tile-compression',         # Helps with some Leaflet plugins
         '--simplification=2',            # Simplification factor (higher means more simplification)
-        '-zg',                             # Auto-determine max zoom from density
-        '--minimum-zoom=5',                # Set a reasonable minimum zoom for lakes to appear
+        '--minimum-zoom=0',                # Set minimum zoom to 0
+        '--maximum-zoom=16',               # Explicitly set maximum zoom
         '--drop-densest-as-needed',      # Standard density management
         '--extend-zooms-if-still-dropping', # Try to push features to higher zooms if still too dense
         # Attributes from the GeoJSON properties will be included by default.
-        # If specific includes/excludes are needed, add flags like:
-        # '--include=DNR_ID', '--include=name', etc.
         str(temp_geojson_for_tiles_path) # Input GeoJSON file
     ]
 
