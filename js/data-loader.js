@@ -176,15 +176,61 @@ class DataLoader {
         this.onDataLoadedCallbacks = [];
     }
 
-    // Search lakes by name
+    // Search lakes by name or alternative name
     searchLakesByName(query) {
-        if (!query) return [];
+        if (!query || query.trim() === '') return [];
         
-        const lowerQuery = query.toLowerCase();
-        return this.lakes.filter(lake => 
-            (lake.LAKE_NAME && lake.LAKE_NAME.toLowerCase().includes(lowerQuery)) || 
-            (lake.ALT_LAKE_NAME && lake.ALT_LAKE_NAME.toLowerCase().includes(lowerQuery))
-        );
+        const searchTerm = query.trim().toLowerCase();
+        console.log(`Searching for: "${searchTerm}"`);
+        
+        if (this.lakes.length === 0) {
+            console.log('No lakes loaded in the data');
+            return [];
+        }
+        
+        // First pass: find exact matches at start of name
+        const exactMatches = this.lakes.filter(lake => {
+            const name = lake.name?.toLowerCase() || '';
+            const altName = lake.alternate_name?.toLowerCase() || '';
+            
+            return name === searchTerm || 
+                   name.startsWith(searchTerm + ' ') ||
+                   altName === searchTerm || 
+                   altName.startsWith(searchTerm + ' ');
+        });
+        
+        // Second pass: find partial matches if no exact matches found
+        const results = exactMatches.length > 0 ? exactMatches : this.lakes.filter(lake => {
+            const name = lake.name?.toLowerCase() || '';
+            const altName = lake.alternate_name?.toLowerCase() || '';
+            
+            return name.includes(searchTerm) || 
+                   altName.includes(searchTerm);
+        });
+        
+        // Sort results by relevance (exact matches first, then by name length)
+        results.sort((a, b) => {
+            const aName = a.name.toLowerCase();
+            const bName = b.name.toLowerCase();
+            
+            // Exact match comes first
+            if (aName === searchTerm) return -1;
+            if (bName === searchTerm) return 1;
+            
+            // Then by name length (shorter names first)
+            return aName.length - bName.length;
+        });
+        
+        console.log(`Search for "${query}" returned ${results.length} results`);
+        if (results.length > 0) {
+            console.log('First 3 results:', results.slice(0, 3).map(r => ({
+                name: r.name,
+                alternate_name: r.alternate_name,
+                county: r.county
+            })));
+        }
+        
+        return results;
     }
 
     // Filter lakes by county

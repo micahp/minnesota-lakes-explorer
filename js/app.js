@@ -34,19 +34,43 @@ function setupUIHandlers(lakeMap) {
     searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const query = searchInput.value.trim();
-        const results = lakeMap.searchByName(query); 
-        
-        if (resultsCountEl) {
-            if (query) {
-                resultsCountEl.textContent = `Found ${results.length} lakes matching "${query}"`;
-                resultsCountEl.style.display = 'block';
-            } else {
-                resultsCountEl.style.display = 'none';
-            }
+        const results = lakeMap.searchByName(query);
+
+        // Clear previous search list and border at the start of every new search submission
+        searchResultsListEl.innerHTML = '';
+        searchResultsListEl.classList.remove('search-results-border');
+
+        if (!query) { // If query is empty (e.g., user submitted an empty search)
+            if (resultsCountEl) resultsCountEl.style.display = 'none';
+            // Optionally clear details panel if the query is empty
+            // const detailsPanel = document.getElementById('lake-details');
+            // if (detailsPanel) detailsPanel.classList.remove('active');
+            return; // Nothing more to do for an empty query
         }
-        // Add border when search is performed
-        searchResultsListEl.classList.add('search-results-border');
-        displaySearchResultsList(results, lakeMap, searchResultsListEl);
+
+        // Display the count of results found
+        if (resultsCountEl) {
+            resultsCountEl.textContent = `Found ${results.length} lakes matching "${query}"`;
+            resultsCountEl.style.display = 'block';
+        }
+
+        if (results.length === 0) {
+            // "Found 0 lakes..." message is displayed by resultsCountEl.
+            // searchResultsListEl remains empty and without border. No explicit "No lakes found" div.
+            // Optionally, ensure details panel is not active if no results
+            // const detailsPanel = document.getElementById('lake-details');
+            // if (detailsPanel) detailsPanel.classList.remove('active');
+        } else if (results.length === 1) {
+            lakeMap.onLakeClick(results[0]); // Show details for the single lake
+
+            // Reset search bar component after resolving the single lake
+            searchInput.value = ''; // Clear the input field
+            if (resultsCountEl) resultsCountEl.style.display = 'none'; // Hide "Found 1 lake..."
+            // searchResultsListEl is already empty and border removed from the start of submit handler
+        } else { // results.length > 1
+            searchResultsListEl.classList.add('search-results-border'); // Add border for the list
+            displaySearchResultsList(results, lakeMap, searchResultsListEl, searchInput, resultsCountEl);
+        }
     });
 
     const clearSearchBtn = document.getElementById('clear-search');
@@ -73,58 +97,36 @@ function setupUIHandlers(lakeMap) {
     }
 }
 
-// New function to display search results in a list
-function displaySearchResultsList(results, lakeMap, listElement) {
-    listElement.innerHTML = ''; // Clear previous results
-    const resultsCountEl = document.getElementById('results-count'); // Get once for potential use
+// Updated function to display search results (only called when results.length > 1)
+function displaySearchResultsList(results, lakeMap, listElement, searchInput, resultsCountEl) {
+    // listElement.innerHTML is cleared by the caller (submit handler) before this function is called.
 
-    if (!results || results.length === 0) {
-        listElement.innerHTML = '<div class=\"search-result-item\">No lakes found.</div>';
-        // Border is added by the submit handler, so it will be present here as desired.
-        return;
-    }
-
-    // 1. Build and append all list items and attach their event listeners
-    results.forEach((lake) => {
+    results.forEach((lake, index) => {
         const item = document.createElement('div');
         item.classList.add('search-result-item');
-        item.textContent = `${lake.LAKE_NAME} (${lake.COUNTY_NAME || 'N/A'})`;
-        item.dataset.lakeId = lake.FISHERIES_WATERBODY_ID; // Store ID for potential use
+        item.textContent = `${lake.name || 'Unnamed Lake'} (${lake.county || 'N/A'})`;
+        item.dataset.lakeId = lake.dow_number || lake.id;
 
         item.addEventListener('click', () => {
-            // This handler is for ACTUAL user clicks on any item.
+            // This is a MANUAL click by the user on an item from the list of multiple results.
             lakeMap.onLakeClick(lake); // Pan/zoom and show details for the clicked lake
 
-            // Visually update active state in the list
-            listElement.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('active'));
-            item.classList.add('active');
-
-            // If there were originally multiple results, hide the list and count now.
-            if (results.length > 1) {
-                listElement.innerHTML = ''; // Clear the list
-                if (resultsCountEl) {
-                    resultsCountEl.style.display = 'none'; // Hide the count message
-                }
-                listElement.classList.remove('search-results-border'); // Remove border when list is cleared
-            }
+            // Clear the search input, hide the count message, and clear the list + border.
+            if (searchInput) searchInput.value = '';
+            if (resultsCountEl) resultsCountEl.style.display = 'none';
+            listElement.innerHTML = '';
+            listElement.classList.remove('search-results-border');
         });
         listElement.appendChild(item);
-    });
 
-    // 2. After all items are in the DOM, if there are results, 
-    //    automatically select the first one functionally and visually.
-    //    This does NOT clear the list.
-    if (results.length > 0) {
-        const firstLakeData = results[0];
-        lakeMap.onLakeClick(firstLakeData); // Show details for the first lake
-
-        // Visually highlight the first item in the list
-        if (listElement.firstChild && listElement.firstChild.classList) { // Ensure firstChild is an element
-            // Clear any previous active states from other items first, then set the new one.
-            listElement.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('active'));
-            listElement.firstChild.classList.add('active');
+        // If it's the first item in the list (results.length > 1 here),
+        // auto-select it functionally (shows details, pans map) and visually highlight it.
+        // The list remains visible for the user to make other selections.
+        if (index === 0) {
+            lakeMap.onLakeClick(lake); // Functionally select (shows details, pans map)
+            item.classList.add('active'); // Visually highlight in the list
         }
-    }
+    });
 }
 
 // Initialize county filter dropdown
