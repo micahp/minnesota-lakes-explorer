@@ -120,12 +120,20 @@ class DataLoader {
         const StringLakeId = String(lakeId); // Ensure we're working with a string version for consistent logging
 
         const foundLake = this.lakes.find(lake => {
-            const lakeDowNumberStr = String(lake.dow_number);
-            const isMatch = lakeDowNumberStr === StringLakeId;
+            // Before: use dow_number
+            // const lakeDowNumberStr = String(lake.dow_number);
+            // const isMatch = lakeDowNumberStr === StringLakeId;
+
+            // After: use map_id
+            const lakeMapIdStr = String(lake.map_id);
+            const isMatch = lakeMapIdStr === StringLakeId;
 
             // Log details specifically for Gull Lake's DNR_ID or any problematic ID
             if (StringLakeId === '11030500') {
-                console.log(`DataLoader.getLakeById (Gull Lake Check): Comparing lake.dow_number '${lakeDowNumberStr}' (type: ${typeof lakeDowNumberStr}) from lake "${lake.name}" with input lakeId '${StringLakeId}' (type: ${typeof StringLakeId}). Match: ${isMatch}`);
+                // Before
+                //console.log(`DataLoader.getLakeById (Gull Lake Check): Comparing lake.dow_number '${lakeDowNumberStr}' (type: ${typeof lakeDowNumberStr}) from lake "${lake.name}" with input lakeId '${StringLakeId}' (type: ${typeof StringLakeId}). Match: ${isMatch}`);
+                // After
+                console.log(`DataLoader.getLakeById (Gull Lake Check): Comparing lake.map_id '${lakeMapIdStr}' (type: ${typeof lakeMapIdStr}) from lake "${lake.name}" with input lakeId '${StringLakeId}' (type: ${typeof StringLakeId}). Match: ${isMatch}`);
             }
             return isMatch;
         });

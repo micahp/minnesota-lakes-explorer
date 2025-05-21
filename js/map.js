@@ -143,16 +143,16 @@ class LakeMap {
         }
 
         try {
-            // Fetch fish details using fullLakeObject.id (assuming it's the FISHERIES_WATERBODY_ID)
-            const fishDataLakeId = fullLakeObject.fisheries_waterbody_id;
-            console.log(`Fetching fish details with ID: ${fishDataLakeId} (from fullLakeObject.fisheries_waterbody_id)`);
+            // Fetch fish details using fullLakeObject.map_id
+            const fishDataLakeId = fullLakeObject.map_id;
+            console.log(`Fetching fish details with ID: ${fishDataLakeId} (from fullLakeObject.map_id)`);
             const fishData = await dataLoader.loadLakeDetails(fishDataLakeId);
             console.log("Fish details from dataLoader.loadLakeDetails:", fishData);
 
             // Notify UI with the full lake object (now has lowercase keys) and the fetched fish data
             this.notifyLakeSelected(fullLakeObject, fishData);
         } catch (error) {
-             console.error(`Error loading fish details for lake ID ${fullLakeObject.fisheries_waterbody_id}:`, error);
+             console.error(`Error loading fish details for lake ID ${fullLakeObject.map_id}:`, error);
              this.notifyLakeSelected(fullLakeObject, {}); 
         }
     }

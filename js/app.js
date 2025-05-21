@@ -160,108 +160,229 @@ function initializeCountyFilter(lakeMap) {
 // Display lake details in the side panel
 function displayLakeDetails(lake, lakeDetails) {
     console.log("app.js: displayLakeDetails called with lake:", lake, "and lakeDetails:", lakeDetails);
-    const detailsDiv = document.getElementById('lake-details');
-    detailsDiv.innerHTML = ''; // Clear previous details
-
+    
+    const lakeDetailsPanel = document.getElementById('lake-details');
     if (!lake) {
-        detailsDiv.innerHTML = '<p>Lake data not available.</p>';
+        if (lakeDetailsPanel) {
+            lakeDetailsPanel.innerHTML = '<p>Lake data not available.</p>';
+            lakeDetailsPanel.classList.add('active');
+        }
+        return;
+    }
+    
+    // Ensure the panel is visible
+    if (lakeDetailsPanel) {
+        lakeDetailsPanel.classList.add('active');
+    }
+
+    // Update the lake name in the header
+    const lakeNameEl = document.getElementById('lake-name');
+    if (lakeNameEl) {
+        lakeNameEl.textContent = lake.name || 'Unknown Lake';
+    }
+
+    // Helper to create a property element if the value exists
+    const createPropertyElement = (label, value, unit = '') => {
+        if (value === null || value === undefined || value === '') return '';
+        const formattedValue = unit ? `${value} ${unit}` : value;
+        return `<p><strong>${label}:</strong> ${formattedValue}</p>`;
+    };
+
+    // Update lake info section
+    const lakeInfoEl = document.getElementById('lake-info');
+    if (lakeInfoEl) {
+        let lakeInfoContent = '';
+        lakeInfoContent += createPropertyElement('County', lake.county);
+        lakeInfoContent += createPropertyElement('Area', lake.area_acres, 'acres');
+        lakeInfoContent += createPropertyElement('Max Depth', lake.max_depth_ft, 'ft');
+        lakeInfoContent += createPropertyElement('Mean Depth', lake.mean_depth_ft, 'ft');
+        lakeInfoContent += createPropertyElement('Shore Length', lake.shore_length_mi, 'miles');
+        
+        // Add DOW number if available
+        if (lake.dow_number) {
+            lakeInfoContent += createPropertyElement('DOW Number', lake.dow_number);
+        }
+        
+        lakeInfoEl.innerHTML = lakeInfoContent || '<p>No additional lake information available.</p>';
+    }
+
+    // Update fish info section
+    const fishInfoEl = document.getElementById('fish-info');
+    if (!fishInfoEl) return;
+
+    if (!lakeDetails || !lakeDetails.fishCatch || Object.keys(lakeDetails.fishCatch).length === 0) {
+        fishInfoEl.innerHTML = '<div class="no-data"><p>No fish survey data available for this lake.</p></div>';
         return;
     }
 
-    // Helper to display a property if it exists
-    const displayProperty = (label, value, unit = '') => {
-        if (value !== null && typeof value !== 'undefined' && value !== '') {
-            return `<p><strong>${label}:</strong> ${value}${unit ? ' ' + unit : ''}</p>`;
-        }
-        return `<p><strong>${label}:</strong> N/A</p>`;
-    };
-
-    let content = `<h3>${lake.name || 'Unknown Lake'}</h3>`;
-    content += displayProperty('County', lake.county);
-    content += displayProperty('Area', lake.area_acres, 'acres');
-    content += displayProperty('Max Depth', lake.max_depth_ft, 'ft');
-    content += displayProperty('Mean Depth', lake.mean_depth_ft, 'ft');
-    content += displayProperty('Shore Length', lake.shore_length_mi, 'miles');
-
-    // Fish data (expects UPPERCASE from lakeDetails)
-    if (lakeDetails && Object.keys(lakeDetails).length > 0 && (lakeDetails.catches || lakeDetails.lengths)) {
-        content += '<h4>Fish Information:</h4>';
-
-        const allSpecies = new Set();
-        if (lakeDetails.catches) {
-            lakeDetails.catches.forEach(c => allSpecies.add(c.COMMON_NAME || c.SPECIES));
-        }
-        if (lakeDetails.lengths) {
-            lakeDetails.lengths.forEach(l => allSpecies.add(l.COMMON_NAME || l.SPECIES));
-        }
-        
-        allSpecies.delete(undefined); // Remove undefined if any
-        allSpecies.delete(null); // Remove null if any
-
-
-        if (allSpecies.size > 0) {
-            allSpecies.forEach(speciesName => {
-                if (!speciesName) return; // Should be caught by delete, but as safeguard
-
-                content += `<h5>${speciesName}</h5>`;
-
-                // Display Catch Data for this species
-                const speciesCatches = lakeDetails.catches ? lakeDetails.catches.filter(c => (c.COMMON_NAME || c.SPECIES) === speciesName) : [];
-                if (speciesCatches.length > 0) {
-                    content += '<h6>Catch Data:</h6><ul>';
-                    speciesCatches.forEach(c => {
-                        const surveyDate = c.SURVEY_DATE ? new Date(c.SURVEY_DATE).toLocaleDateString() : 'N/A';
-                        content += `<li>CPUE: ${c.CPUE || 'N/A'} (Survey: ${surveyDate})</li>`;
-                    });
-                    content += '</ul>';
-                } else {
-                    content += '<p>No specific catch data for this species.</p>';
-                }
-
-                // Display Length Distribution for this species
-                const speciesLengths = lakeDetails.lengths ? lakeDetails.lengths.filter(l => (l.COMMON_NAME || l.SPECIES) === speciesName) : [];
-                if (speciesLengths.length > 0) {
-                    content += '<h6>Length Distribution:</h6>';
-                    speciesLengths.forEach(l => {
-                        content += `<p>Survey Year: ${l.SURVEY_YEAR || 'N/A'}</p>`;
-                        if (l.LENGTH_DISTRIBUTION) {
-                            // Attempt to parse simple "key:value,key:value" strings
-                            content += '<ul>';
-                            try {
-                                const distributions = String(l.LENGTH_DISTRIBUTION).split(',');
-                                if (distributions.length > 0 && distributions[0].includes(':')) {
-                                    distributions.forEach(dist => {
-                                        const parts = dist.split(':');
-                                        if (parts.length === 2) {
-                                            content += `<li>${parts[0].trim()}: ${parts[1].trim()}</li>`;
-                                        } else {
-                                            content += `<li>${dist}</li>`; // Fallback for non-standard parts
-                                        }
-                                    });
-                                } else { // If not comma separated key:value, or only one item without colon
-                                   content += `<li>${l.LENGTH_DISTRIBUTION}</li>`; // Display raw
-                                }
-                            } catch (e) {
-                                console.warn("Could not parse LENGTH_DISTRIBUTION string:", l.LENGTH_DISTRIBUTION, e);
-                                content += `<li>${l.LENGTH_DISTRIBUTION}</li>`; // Fallback to raw display
-                            }
-                            content += '</ul>';
-                        } else {
-                            content += '<p>No length distribution data.</p>';
-                        }
-                    });
-                } // No specific message if length data is missing for a species with catch data
-                 content += '<hr>'; // Separator between species
-            });
-        } else {
-            content += '<p>No fish species data found.</p>';
-        }
-
-    } else {
-        content += '<p>No detailed fish survey data available for this lake.</p>';
+    let fishInfoContent = `
+        <div class="fish-survey-header">
+            <h3>Fish Survey Data</h3>
+            <div class="survey-legend">
+                <span class="legend-item"><span class="legend-color cpue"></span> CPUE</span>
+                <span class="legend-item"><span class="legend-color total"></span> Total Catch</span>
+            </div>
+        </div>
+        <div class="fish-species-container">
+    `;
+    
+    // Process fish catch data
+    const fishCatchData = lakeDetails.fishCatch;
+    const speciesList = Object.entries(fishCatchData)
+        .filter(([_, surveys]) => Array.isArray(surveys) && surveys.length > 0)
+        .sort((a, b) => a[0].localeCompare(b[0])); // Sort species alphabetically
+    
+    if (speciesList.length === 0) {
+        fishInfoEl.innerHTML = '<div class="no-data"><p>No fish survey data available for this lake.</p></div>';
+        return;
     }
 
-    detailsDiv.innerHTML = content;
+    speciesList.forEach(([species, surveys]) => {
+        // Get unique survey dates and sort them in descending order (most recent first)
+        const surveyDates = [...new Set(surveys.map(s => s.survey_date))]
+            .filter(Boolean)
+            .sort((a, b) => new Date(b) - new Date(a));
+        
+        // Calculate total CPUE and catch across all surveys for this species
+        const totalCatch = surveys.reduce((sum, survey) => sum + (parseInt(survey.total_catch) || 0), 0);
+        const avgCPUE = (surveys.reduce((sum, survey) => sum + (parseFloat(survey.cpue) || 0), 0) / surveys.length).toFixed(2);
+        
+        fishInfoContent += `
+            <div class="fish-species">
+                <div class="species-header">
+                    <h4>${species}</h4>
+                    <div class="species-stats">
+                        <span class="stat"><strong>Avg CPUE:</strong> ${avgCPUE}</span>
+                        <span class="stat"><strong>Total Catch:</strong> ${totalCatch}</span>
+                        <span class="stat"><strong>Surveys:</strong> ${surveyDates.length}</span>
+                    </div>
+                </div>
+                <div class="survey-dates">
+        `;
+        
+        // Display each survey date with collapsible content
+        surveyDates.forEach(date => {
+            const dateSurveys = surveys.filter(s => s.survey_date === date);
+            const dateId = `date-${date}-${species.replace(/\s+/g, '-')}`;
+            
+            fishInfoContent += `
+                <div class="survey-date">
+                    <button class="survey-date-btn" aria-expanded="false" data-target="${dateId}">
+                        <span class="date">${date}</span>
+                        <span class="survey-count">${dateSurveys.length} survey${dateSurveys.length > 1 ? 's' : ''}</span>
+                        <span class="toggle-icon">+</span>
+                    </button>
+                    <div id="${dateId}" class="survey-details" hidden>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Gear Type</th>
+                                    <th>CPUE</th>
+                                    <th>Total Catch</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+            
+            dateSurveys.forEach(survey => {
+                fishInfoContent += `
+                    <tr>
+                        <td>${survey.gear_type || 'N/A'}</td>
+                        <td class="cpue">${survey.cpue || 'N/A'}</td>
+                        <td class="total">${survey.total_catch || 'N/A'}</td>
+                    </tr>
+                `;
+            });
+            
+            fishInfoContent += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        });
+        
+        fishInfoContent += `
+                </div>
+            </div>
+        `;
+    });
+    
+    fishInfoContent += `</div>`; // Close fish-species-container
+    
+    // Add fish length data if available
+    if (lakeDetails.fishLength && Object.keys(lakeDetails.fishLength).length > 0) {
+        fishInfoContent += `
+            <div class="length-data-container">
+                <h3>Fish Length Data</h3>
+                <div class="length-data-grid">
+        `;
+        
+        Object.entries(lakeDetails.fishLength).forEach(([species, lengthData]) => {
+            if (!Array.isArray(lengthData) || lengthData.length === 0) return;
+            
+            fishInfoContent += `
+                <div class="length-data-item">
+                    <h4>${species}</h4>
+                    <div class="length-data-details">
+            `;
+            
+            // Group by survey date
+            const surveysByDate = {};
+            lengthData.forEach(record => {
+                if (!record.survey_date) return;
+                if (!surveysByDate[record.survey_date]) {
+                    surveysByDate[record.survey_date] = [];
+                }
+                surveysByDate[record.survey_date].push(record);
+            });
+            
+            Object.entries(surveysByDate).forEach(([date, records]) => {
+                fishInfoContent += `<div class="length-survey">`;
+                fishInfoContent += `<strong>${date}:</strong> `;
+                
+                const lengthInfo = records.map(record => {
+                    if (record.length_distribution && typeof record.length_distribution === 'object') {
+                        // Format length distribution if it's an object
+                        return Object.entries(record.length_distribution)
+                            .map(([length, count]) => `${length}": ${count}`)
+                            .join(', ');
+                    } else if (record.length_inches) {
+                        return `${record.length_inches} inches`;
+                    }
+                    return '';
+                }).filter(Boolean).join('; ');
+                
+                fishInfoContent += lengthInfo || 'No length data';
+                fishInfoContent += `</div>`;
+            });
+            
+            fishInfoContent += `
+                    </div>
+                </div>
+            `;
+        });
+        
+        fishInfoContent += `
+                </div>
+            </div>
+        `;
+    }
+    
+    fishInfoEl.innerHTML = fishInfoContent || '<div class="no-data"><p>No fish data available.</p></div>';
+    
+    // Add event listeners for collapsible sections
+    document.querySelectorAll('.survey-date-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const targetId = button.getAttribute('data-target');
+            const target = document.getElementById(targetId);
+            const isExpanded = button.getAttribute('aria-expanded') === 'true';
+            
+            button.setAttribute('aria-expanded', !isExpanded);
+            target.hidden = isExpanded;
+            button.querySelector('.toggle-icon').textContent = isExpanded ? '+' : '−';
+        });
+    });
 }
 
 

@@ -1,0 +1,245 @@
+/* Fish Survey Data Styles */
+
+.fish-survey-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.survey-legend {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.legend-color {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+}
+
+.legend-color.cpue {
+    background-color: #4a90e2;
+}
+
+.legend-color.total {
+    background-color: #50e3c2;
+}
+
+/* Fish Species Card */
+.fish-species {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.species-header {
+    padding: 1rem 1.25rem;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.species-header h4 {
+    margin: 0 0 0.5rem 0;
+    color: #2c3e50;
+    font-size: 1.1rem;
+}
+
+.species-stats {
+    display: flex;
+    gap: 1.5rem;
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.species-stats .stat {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+/* Survey Dates */
+.survey-dates {
+    padding: 0.5rem 0;
+}
+
+.survey-date {
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.survey-date:last-child {
+    border-bottom: none;
+}
+
+.survey-date-btn {
+    width: 100%;
+    text-align: left;
+    padding: 0.75rem 1.25rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.survey-date-btn:hover {
+    background-color: #f8f9fa;
+}
+
+.survey-date-btn .date {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.survey-date-btn .survey-count {
+    font-size: 0.85rem;
+    color: #6c757d;
+    background-color: #e9ecef;
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+    margin-left: auto;
+    margin-right: 0.75rem;
+}
+
+.survey-date-btn .toggle-icon {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #6c757d;
+    transition: transform 0.2s;
+}
+
+.survey-date-btn[aria-expanded="true"] .toggle-icon {
+    transform: rotate(45deg);
+}
+
+/* Survey Details Table */
+.survey-details {
+    padding: 0 1.25rem 1rem;
+    background-color: #fff;
+}
+
+.survey-details table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.survey-details th,
+.survey-details td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.survey-details th {
+    font-weight: 600;
+    color: #495057;
+    background-color: #f8f9fa;
+}
+
+.survey-details tr:last-child td {
+    border-bottom: none;
+}
+
+.survey-details td.cpue {
+    color: #4a90e2;
+    font-weight: 500;
+}
+
+.survey-details td.total {
+    color: #20c997;
+    font-weight: 500;
+}
+
+/* Fish Length Data */
+.length-data-container {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e0e0e0;
+}
+
+.length-data-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1rem;
+}
+
+.length-data-item {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.length-data-item h4 {
+    margin: 0 0 0.75rem 0;
+    color: #2c3e50;
+    font-size: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.length-data-details {
+    font-size: 0.9rem;
+    color: #495057;
+}
+
+.length-survey {
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed #f0f0f0;
+}
+
+.length-survey:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+/* No Data Message */
+.no-data {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .fish-survey-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+    
+    .species-stats {
+        flex-wrap: wrap;
+        gap: 0.75rem 1.5rem;
+    }
+    
+    .length-data-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .survey-details {
+        overflow-x: auto;
+    }
+}
