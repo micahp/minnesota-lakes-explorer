@@ -88,8 +88,8 @@ function displaySearchResultsList(results, lakeMap, listElement) {
     results.forEach((lake) => {
         const item = document.createElement('div');
         item.classList.add('search-result-item');
-        item.textContent = `${lake.name} (${lake.county || 'N/A'})`;
-        item.dataset.lakeId = lake.DNR_ID; // Store ID for potential use
+        item.textContent = `${lake.LAKE_NAME} (${lake.COUNTY_NAME || 'N/A'})`;
+        item.dataset.lakeId = lake.FISHERIES_WATERBODY_ID; // Store ID for potential use
 
         item.addEventListener('click', () => {
             // This handler is for ACTUAL user clicks on any item.
@@ -135,222 +135,135 @@ function initializeCountyFilter(lakeMap) {
     dataLoader.onDataLoaded(() => {
         // Get all counties
         const counties = dataLoader.getAllCounties();
+        // ---- START DIAGNOSTIC ----
+        console.log("Counties received by initializeCountyFilter:", counties);
+        // ---- END DIAGNOSTIC ----
         
-        // Add counties to dropdown
-        countySelect.innerHTML = '<option value="">All Counties</option>';
-        counties.forEach(county => {
-            const option = document.createElement('option');
-            option.value = county;
-            option.textContent = county;
-            countySelect.appendChild(option);
-        });
-        
-        // Handle county selection
-        countySelect.addEventListener('change', () => {
-            const selectedCounty = countySelect.value;
-            lakeMap.filterByCounty(selectedCounty);
-        });
-    });
+        if (counties && counties.length > 0) {
+            countySelect.innerHTML = '<option value="">All Counties</option>';
+            counties.forEach(county => {
+                const option = document.createElement('option');
+                option.value = county;
+                option.textContent = county;
+                countySelect.appendChild(option);
+            });
+            
+            // Handle county selection
+            countySelect.addEventListener('change', () => {
+                const selectedCounty = countySelect.value;
+                lakeMap.filterByCounty(selectedCounty);
+            });
+        } // Closes: if (counties && counties.length > 0)
+    }); // Closes: dataLoader.onDataLoaded(() => {
 }
 
 // Display lake details in the side panel
 function displayLakeDetails(lake, lakeDetails) {
-    const detailsPanel = document.getElementById('lake-details');
-    const lakeName = document.getElementById('lake-name');
-    const lakeInfo = document.getElementById('lake-info');
-    const fishInfo = document.getElementById('fish-info');
-    
-    // Set lake name
-    lakeName.textContent = lake.name || 'Unknown Lake';
-    
-    // Build lake info HTML
-    let infoHTML = `
-        <div class="info-section">
-            <h3>Lake Information</h3>
-            <table class="info-table">
-                <tr>
-                    <th>County:</th>
-                    <td>${lake.county || 'Unknown'}</td>
-                </tr>
-    `;
-    
-    if (lake.area_acres) {
-        infoHTML += `
-                <tr>
-                    <th>Area:</th>
-                    <td>${Number(lake.area_acres).toLocaleString()} acres</td>
-                </tr>
-        `;
+    console.log("app.js: displayLakeDetails called with lake:", lake, "and lakeDetails:", lakeDetails);
+    const detailsDiv = document.getElementById('lake-details');
+    detailsDiv.innerHTML = ''; // Clear previous details
+
+    if (!lake) {
+        detailsDiv.innerHTML = '<p>Lake data not available.</p>';
+        return;
     }
-    
-    if (lake.max_depth_ft) {
-        infoHTML += `
-                <tr>
-                    <th>Max Depth:</th>
-                    <td>${Number(lake.max_depth_ft).toLocaleString()} feet</td>
-                </tr>
-        `;
-    }
-    
-    if (lake.mean_depth_ft) {
-        infoHTML += `
-                <tr>
-                    <th>Mean Depth:</th>
-                    <td>${Number(lake.mean_depth_ft).toLocaleString()} feet</td>
-                </tr>
-        `;
-    }
-    
-    if (lake.shore_length_mi) {
-        infoHTML += `
-                <tr>
-                    <th>Shoreline:</th>
-                    <td>${Number(lake.shore_length_mi).toLocaleString()} miles</td>
-                </tr>
-        `;
-    }
-    
-    if (lake.dow_number) {
-        infoHTML += `
-                <tr>
-                    <th>DOW Number:</th>
-                    <td>${lake.dow_number}</td>
-                </tr>
-        `;
-    }
-    
-    if (lake.alternate_name) {
-        infoHTML += `
-                <tr>
-                    <th>Also Known As:</th>
-                    <td>${lake.alternate_name}</td>
-                </tr>
-        `;
-    }
-    
-    infoHTML += `
-            </table>
-        </div>
-    `;
-    
-    lakeInfo.innerHTML = infoHTML;
-    
-    // Build fish info HTML
-    const { fishCatch = {}, fishLength = {} } = lakeDetails || {};
-    let fishHTML = '';
-    
-    // Check if we have fish data
-    const hasFishData = Object.keys(fishCatch).length > 0;
-    
-    if (hasFishData) {
-        fishHTML = `
-            <div class="info-section">
-                <h3>Fish Species</h3>
-                <div class="fish-list">
-        `;
+
+    // Helper to display a property if it exists
+    const displayProperty = (label, value, unit = '') => {
+        if (value !== null && typeof value !== 'undefined' && value !== '') {
+            return `<p><strong>${label}:</strong> ${value}${unit ? ' ' + unit : ''}</p>`;
+        }
+        return `<p><strong>${label}:</strong> N/A</p>`;
+    };
+
+    let content = `<h3>${lake.name || 'Unknown Lake'}</h3>`;
+    content += displayProperty('County', lake.county);
+    content += displayProperty('Area', lake.area_acres, 'acres');
+    content += displayProperty('Max Depth', lake.max_depth_ft, 'ft');
+    content += displayProperty('Mean Depth', lake.mean_depth_ft, 'ft');
+    content += displayProperty('Shore Length', lake.shore_length_mi, 'miles');
+
+    // Fish data (expects UPPERCASE from lakeDetails)
+    if (lakeDetails && Object.keys(lakeDetails).length > 0 && (lakeDetails.catches || lakeDetails.lengths)) {
+        content += '<h4>Fish Information:</h4>';
+
+        const allSpecies = new Set();
+        if (lakeDetails.catches) {
+            lakeDetails.catches.forEach(c => allSpecies.add(c.COMMON_NAME || c.SPECIES));
+        }
+        if (lakeDetails.lengths) {
+            lakeDetails.lengths.forEach(l => allSpecies.add(l.COMMON_NAME || l.SPECIES));
+        }
         
-        // Create a list of all fish species in this lake
-        const fishSpecies = Object.keys(fishCatch);
-        
-        fishSpecies.forEach(speciesCode => {
-            const speciesInfo = dataLoader.getFishSpecies(speciesCode) || { name: 'Unknown Species', scientific_name: 'Unknown' };
-            const catchData = fishCatch[speciesCode] || [];
-            
-            // Calculate average CPUE (Catch Per Unit Effort)
-            let totalCPUE = 0;
-            let countCPUE = 0;
-            
-            catchData.forEach(catch_entry => {
-                if (catch_entry && catch_entry.cpue) {
-                    totalCPUE += catch_entry.cpue;
-                    countCPUE++;
-                }
-            });
-            
-            const avgCPUE = countCPUE > 0 ? (totalCPUE / countCPUE).toFixed(2) : 'N/A';
-            
-            // Get the most recent survey date
-            const surveyDates = catchData
-                .filter(entry => entry && entry.survey_date)
-                .map(entry => entry.survey_date);
-            const mostRecentSurvey = surveyDates.length > 0 ? 
-                new Date(Math.max(...surveyDates.map(date => new Date(date)))).toLocaleDateString() : 
-                'N/A';
-            
-            fishHTML += `
-                <div class="fish-card">
-                    <h4>${speciesInfo.name}</h4>
-                    <p class="scientific-name">${speciesInfo.scientific_name}</p>
-                    <div class="fish-stats">
-                        <div class="stat">
-                            <span class="stat-label">Avg. Catch Rate:</span>
-                            <span class="stat-value">${avgCPUE}</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">Last Survey:</span>
-                            <span class="stat-value">${mostRecentSurvey}</span>
-                        </div>
-                    </div>
-            `;
-            
-            // Add length distribution if available
-            if (fishLength[speciesCode] && fishLength[speciesCode].length > 0) {
-                const lengthData = fishLength[speciesCode][0].length_distribution;
-                
-                if (lengthData && Object.keys(lengthData).length > 0) {
-                    fishHTML += `
-                        <div class="length-distribution">
-                            <h5>Length Distribution</h5>
-                            <div class="length-chart">
-                    `;
-                    
-                    // Simple bar chart for length distribution
-                    const lengthRanges = Object.keys(lengthData).sort();
-                    const maxCount = Math.max(...Object.values(lengthData));
-                    
-                    lengthRanges.forEach(range => {
-                        const count = lengthData[range];
-                        const percentage = maxCount > 0 ? (count / maxCount) * 100 : 0;
-                        
-                        fishHTML += `
-                            <div class="length-bar-container" title="${range} inches: ${count} fish">
-                                <div class="length-label">${range}"</div>
-                                <div class="length-bar" style="width: ${percentage}%"></div>
-                                <div class="length-count">${count}</div>
-                            </div>
-                        `;
+        allSpecies.delete(undefined); // Remove undefined if any
+        allSpecies.delete(null); // Remove null if any
+
+
+        if (allSpecies.size > 0) {
+            allSpecies.forEach(speciesName => {
+                if (!speciesName) return; // Should be caught by delete, but as safeguard
+
+                content += `<h5>${speciesName}</h5>`;
+
+                // Display Catch Data for this species
+                const speciesCatches = lakeDetails.catches ? lakeDetails.catches.filter(c => (c.COMMON_NAME || c.SPECIES) === speciesName) : [];
+                if (speciesCatches.length > 0) {
+                    content += '<h6>Catch Data:</h6><ul>';
+                    speciesCatches.forEach(c => {
+                        const surveyDate = c.SURVEY_DATE ? new Date(c.SURVEY_DATE).toLocaleDateString() : 'N/A';
+                        content += `<li>CPUE: ${c.CPUE || 'N/A'} (Survey: ${surveyDate})</li>`;
                     });
-                    
-                    fishHTML += `
-                            </div>
-                        </div>
-                    `;
+                    content += '</ul>';
+                } else {
+                    content += '<p>No specific catch data for this species.</p>';
                 }
-            }
-            
-            fishHTML += `
-                </div>
-            `;
-        });
-        
-        fishHTML += `
-                </div>
-            </div>
-        `;
+
+                // Display Length Distribution for this species
+                const speciesLengths = lakeDetails.lengths ? lakeDetails.lengths.filter(l => (l.COMMON_NAME || l.SPECIES) === speciesName) : [];
+                if (speciesLengths.length > 0) {
+                    content += '<h6>Length Distribution:</h6>';
+                    speciesLengths.forEach(l => {
+                        content += `<p>Survey Year: ${l.SURVEY_YEAR || 'N/A'}</p>`;
+                        if (l.LENGTH_DISTRIBUTION) {
+                            // Attempt to parse simple "key:value,key:value" strings
+                            content += '<ul>';
+                            try {
+                                const distributions = String(l.LENGTH_DISTRIBUTION).split(',');
+                                if (distributions.length > 0 && distributions[0].includes(':')) {
+                                    distributions.forEach(dist => {
+                                        const parts = dist.split(':');
+                                        if (parts.length === 2) {
+                                            content += `<li>${parts[0].trim()}: ${parts[1].trim()}</li>`;
+                                        } else {
+                                            content += `<li>${dist}</li>`; // Fallback for non-standard parts
+                                        }
+                                    });
+                                } else { // If not comma separated key:value, or only one item without colon
+                                   content += `<li>${l.LENGTH_DISTRIBUTION}</li>`; // Display raw
+                                }
+                            } catch (e) {
+                                console.warn("Could not parse LENGTH_DISTRIBUTION string:", l.LENGTH_DISTRIBUTION, e);
+                                content += `<li>${l.LENGTH_DISTRIBUTION}</li>`; // Fallback to raw display
+                            }
+                            content += '</ul>';
+                        } else {
+                            content += '<p>No length distribution data.</p>';
+                        }
+                    });
+                } // No specific message if length data is missing for a species with catch data
+                 content += '<hr>'; // Separator between species
+            });
+        } else {
+            content += '<p>No fish species data found.</p>';
+        }
+
     } else {
-        fishHTML = `
-            <div class="info-section">
-                <h3>Fish Species</h3>
-                <p>No fish survey data available for this lake.</p>
-            </div>
-        `;
+        content += '<p>No detailed fish survey data available for this lake.</p>';
     }
-    
-    fishInfo.innerHTML = fishHTML;
-    
-    // Show details panel
-    detailsPanel.classList.add('active');
+
+    detailsDiv.innerHTML = content;
 }
+
 
 // Export app functions for potential use in other modules
 export { initApp, displayLakeDetails }; 

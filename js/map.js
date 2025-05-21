@@ -45,7 +45,7 @@ class LakeMap {
                         fillOpacity: 0
                     };
 
-                    if (this.selectedCounty && properties.county !== this.selectedCounty) {
+                    if (this.selectedCounty && properties.county && properties.county.toUpperCase() !== this.selectedCounty.toUpperCase()) {
                         return hiddenStyle;
                     }
                     return defaultStyle;
@@ -60,14 +60,22 @@ class LakeMap {
         this.vectorLayer = L.vectorGrid.protobuf(tileUrl, vectorTileOptions).addTo(this.map);
 
         this.vectorLayer.on('click', async (e) => {
-            L.DomEvent.stop(e); 
+            L.DomEvent.stop(e);
             const props = e.layer.properties;
+            this.lastClickedTileProps = props; // Store for fallback in onLakeClick
             console.log("Vector tile clicked props:", props);
             if (props && props.DNR_ID) {
-                const lakeMasterData = dataLoader.getLakeById(props.DNR_ID) || 
-                                     { id: props.DNR_ID, name: props.name, county: props.county }; 
-                console.log("Lake master data for onLakeClick:", lakeMasterData);
-                await this.onLakeClick(lakeMasterData);
+                // Fetch the full lake object using DNR_ID from tile properties
+                const fullLakeObject = dataLoader.getLakeById(props.DNR_ID);
+
+                if (fullLakeObject) {
+                    console.log("Full lake object fetched:", fullLakeObject);
+                    await this.onLakeClick(fullLakeObject); // Pass the full object
+                } else {
+                    console.error(`Lake with DNR_ID ${props.DNR_ID} not found in master data.`);
+                    // Optionally notify UI about the missing data
+                    this.notifyLakeSelected({ name: props.name || 'Unknown Lake', county: props.county || 'Unknown' }, {});
+                }
             } else {
                 console.warn('Clicked lake vector tile without DNR_ID:', props);
             }
@@ -113,37 +121,39 @@ class LakeMap {
         return this.map;
     }
 
-    // Handle lake click - now only fetches data and notifies UI
-    async onLakeClick(lakeDataFromFeature) {
-        console.log("onLakeClick received:", lakeDataFromFeature);
+    // Handle lake click - now processes the full lake object
+    async onLakeClick(fullLakeObject) { // Expecting the full lake object from dataLoader
+        console.log("onLakeClick received full lake object:", fullLakeObject);
 
-        // Pan/zoom to the lake's location first
-        if (lakeDataFromFeature && typeof lakeDataFromFeature.center_lat === 'number' && typeof lakeDataFromFeature.center_lon === 'number') {
-            const zoomLevel = this.map.getZoom() < 10 ? 13 : this.map.getZoom(); // Zoom in if map is too zoomed out, else keep current zoom
-            this.map.flyTo([lakeDataFromFeature.center_lat, lakeDataFromFeature.center_lon], zoomLevel);
-            console.log(`Map flying to: [${lakeDataFromFeature.center_lat}, ${lakeDataFromFeature.center_lon}] at zoom ${zoomLevel}`);
+        // Check for dow_number as it's the primary key from lakes.json used for initial fetch
+        // and 'id' which we assume links to fish data (as FISHERIES_WATERBODY_ID)
+        if (!fullLakeObject || !fullLakeObject.dow_number || typeof fullLakeObject.id === 'undefined') { 
+            console.error('onLakeClick: Full lake object, dow_number, or id is missing.', fullLakeObject);
+            // Pass a minimal object to clear details or show 'unknown', using lowercase from tile props if available
+            const tileProps = this.lastClickedTileProps || {}; // Store last clicked props on the class if needed elsewhere
+            this.notifyLakeSelected({ name: tileProps.name || 'Unknown Lake', county: tileProps.county || 'Unknown' }, {});
+            return;
+        }
+
+        // Pan to lake if coordinates are available (using lowercase keys)
+        if (fullLakeObject.latitude && fullLakeObject.longitude) { // Assuming these are the correct keys from lakes.json
+            this.map.setView([fullLakeObject.latitude, fullLakeObject.longitude], 13);
         } else {
-            console.warn("onLakeClick: Lake data missing center_lat or center_lon. Cannot pan map.", lakeDataFromFeature);
+            console.warn(`onLakeClick: Lake data missing latitude or longitude. Cannot pan map.`, fullLakeObject);
         }
 
         try {
-            const lakeId = lakeDataFromFeature.id || lakeDataFromFeature.DNR_ID; // Handle both possible ID property names
-            if (!lakeId) {
-                console.error("onLakeClick: Lake data missing ID. Cannot fetch details.", lakeDataFromFeature);
-                this.notifyLakeSelected(lakeDataFromFeature, {}); // Notify with what we have
-                return;
-            }
+            // Fetch fish details using fullLakeObject.id (assuming it's the FISHERIES_WATERBODY_ID)
+            const fishDataLakeId = fullLakeObject.fisheries_waterbody_id;
+            console.log(`Fetching fish details with ID: ${fishDataLakeId} (from fullLakeObject.fisheries_waterbody_id)`);
+            const fishData = await dataLoader.loadLakeDetails(fishDataLakeId);
+            console.log("Fish details from dataLoader.loadLakeDetails:", fishData);
 
-            const lakeDetails = await dataLoader.loadLakeDetails(lakeId);
-            console.log("Details from dataLoader.loadLakeDetails:", lakeDetails);
-            
-            const basicInfoForDisplay = dataLoader.getLakeById(lakeId) || lakeDataFromFeature;
-
-            this.notifyLakeSelected({ ...basicInfoForDisplay, ...lakeDetails.basicInfo }, lakeDetails.surveyData);
+            // Notify UI with the full lake object (now has lowercase keys) and the fetched fish data
+            this.notifyLakeSelected(fullLakeObject, fishData);
         } catch (error) {
-             const lakeId = lakeDataFromFeature.id || lakeDataFromFeature.DNR_ID;
-             console.error(`Error loading details for lake ID ${lakeId}:`, error);
-             this.notifyLakeSelected(lakeDataFromFeature, {}); 
+             console.error(`Error loading fish details for lake ID ${fullLakeObject.fisheries_waterbody_id}:`, error);
+             this.notifyLakeSelected(fullLakeObject, {}); 
         }
     }
 
