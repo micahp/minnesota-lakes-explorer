@@ -24,8 +24,10 @@ class LakeMap {
         }).addTo(this.map);
 
         await dataLoader.loadInitialData();
-        
-        const tileUrl = 'http://localhost:8080/data/lake_tiles/{z}/{x}/{y}.pbf'; 
+	    
+	const tileUrl = location.hostname === 'localhost'
+    	    ? 'http://localhost:8080/data/lake_tiles/{z}/{x}/{y}.pbf'
+    	    : 'https://minnesotalakesonchain.com/tiles/lake_tiles/{z}/{x}/{y}.pbf';        
 
         const vectorTileOptions = {
             vectorTileLayerStyles: {
