@@ -34,19 +34,43 @@ function setupUIHandlers(lakeMap) {
     searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const query = searchInput.value.trim();
-        const results = lakeMap.searchByName(query); 
-        
-        if (resultsCountEl) {
-            if (query) {
-                resultsCountEl.textContent = `Found ${results.length} lakes matching "${query}"`;
-                resultsCountEl.style.display = 'block';
-            } else {
-                resultsCountEl.style.display = 'none';
-            }
+        const results = lakeMap.searchByName(query);
+
+        // Clear previous search list and border at the start of every new search submission
+        searchResultsListEl.innerHTML = '';
+        searchResultsListEl.classList.remove('search-results-border');
+
+        if (!query) { // If query is empty (e.g., user submitted an empty search)
+            if (resultsCountEl) resultsCountEl.style.display = 'none';
+            // Optionally clear details panel if the query is empty
+            // const detailsPanel = document.getElementById('lake-details');
+            // if (detailsPanel) detailsPanel.classList.remove('active');
+            return; // Nothing more to do for an empty query
         }
-        // Add border when search is performed
-        searchResultsListEl.classList.add('search-results-border');
-        displaySearchResultsList(results, lakeMap, searchResultsListEl);
+
+        // Display the count of results found
+        if (resultsCountEl) {
+            resultsCountEl.textContent = `Found ${results.length} lakes matching "${query}"`;
+            resultsCountEl.style.display = 'block';
+        }
+
+        if (results.length === 0) {
+            // "Found 0 lakes..." message is displayed by resultsCountEl.
+            // searchResultsListEl remains empty and without border. No explicit "No lakes found" div.
+            // Optionally, ensure details panel is not active if no results
+            // const detailsPanel = document.getElementById('lake-details');
+            // if (detailsPanel) detailsPanel.classList.remove('active');
+        } else if (results.length === 1) {
+            lakeMap.onLakeClick(results[0]); // Show details for the single lake
+
+            // Reset search bar component after resolving the single lake
+            searchInput.value = ''; // Clear the input field
+            if (resultsCountEl) resultsCountEl.style.display = 'none'; // Hide "Found 1 lake..."
+            // searchResultsListEl is already empty and border removed from the start of submit handler
+        } else { // results.length > 1
+            searchResultsListEl.classList.add('search-results-border'); // Add border for the list
+            displaySearchResultsList(results, lakeMap, searchResultsListEl, searchInput, resultsCountEl);
+        }
     });
 
     const clearSearchBtn = document.getElementById('clear-search');
@@ -73,58 +97,36 @@ function setupUIHandlers(lakeMap) {
     }
 }
 
-// New function to display search results in a list
-function displaySearchResultsList(results, lakeMap, listElement) {
-    listElement.innerHTML = ''; // Clear previous results
-    const resultsCountEl = document.getElementById('results-count'); // Get once for potential use
+// Updated function to display search results (only called when results.length > 1)
+function displaySearchResultsList(results, lakeMap, listElement, searchInput, resultsCountEl) {
+    // listElement.innerHTML is cleared by the caller (submit handler) before this function is called.
 
-    if (!results || results.length === 0) {
-        listElement.innerHTML = '<div class=\"search-result-item\">No lakes found.</div>';
-        // Border is added by the submit handler, so it will be present here as desired.
-        return;
-    }
-
-    // 1. Build and append all list items and attach their event listeners
-    results.forEach((lake) => {
+    results.forEach((lake, index) => {
         const item = document.createElement('div');
         item.classList.add('search-result-item');
-        item.textContent = `${lake.name} (${lake.county || 'N/A'})`;
-        item.dataset.lakeId = lake.DNR_ID; // Store ID for potential use
+        item.textContent = `${lake.name || 'Unnamed Lake'} (${lake.county || 'N/A'})`;
+        item.dataset.lakeId = lake.dow_number || lake.id;
 
         item.addEventListener('click', () => {
-            // This handler is for ACTUAL user clicks on any item.
+            // This is a MANUAL click by the user on an item from the list of multiple results.
             lakeMap.onLakeClick(lake); // Pan/zoom and show details for the clicked lake
 
-            // Visually update active state in the list
-            listElement.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('active'));
-            item.classList.add('active');
-
-            // If there were originally multiple results, hide the list and count now.
-            if (results.length > 1) {
-                listElement.innerHTML = ''; // Clear the list
-                if (resultsCountEl) {
-                    resultsCountEl.style.display = 'none'; // Hide the count message
-                }
-                listElement.classList.remove('search-results-border'); // Remove border when list is cleared
-            }
+            // Clear the search input, hide the count message, and clear the list + border.
+            if (searchInput) searchInput.value = '';
+            if (resultsCountEl) resultsCountEl.style.display = 'none';
+            listElement.innerHTML = '';
+            listElement.classList.remove('search-results-border');
         });
         listElement.appendChild(item);
-    });
 
-    // 2. After all items are in the DOM, if there are results, 
-    //    automatically select the first one functionally and visually.
-    //    This does NOT clear the list.
-    if (results.length > 0) {
-        const firstLakeData = results[0];
-        lakeMap.onLakeClick(firstLakeData); // Show details for the first lake
-
-        // Visually highlight the first item in the list
-        if (listElement.firstChild && listElement.firstChild.classList) { // Ensure firstChild is an element
-            // Clear any previous active states from other items first, then set the new one.
-            listElement.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('active'));
-            listElement.firstChild.classList.add('active');
+        // If it's the first item in the list (results.length > 1 here),
+        // auto-select it functionally (shows details, pans map) and visually highlight it.
+        // The list remains visible for the user to make other selections.
+        if (index === 0) {
+            lakeMap.onLakeClick(lake); // Functionally select (shows details, pans map)
+            item.classList.add('active'); // Visually highlight in the list
         }
-    }
+    });
 }
 
 // Initialize county filter dropdown
@@ -135,222 +137,256 @@ function initializeCountyFilter(lakeMap) {
     dataLoader.onDataLoaded(() => {
         // Get all counties
         const counties = dataLoader.getAllCounties();
+        // ---- START DIAGNOSTIC ----
+        console.log("Counties received by initializeCountyFilter:", counties);
+        // ---- END DIAGNOSTIC ----
         
-        // Add counties to dropdown
-        countySelect.innerHTML = '<option value="">All Counties</option>';
-        counties.forEach(county => {
-            const option = document.createElement('option');
-            option.value = county;
-            option.textContent = county;
-            countySelect.appendChild(option);
-        });
-        
-        // Handle county selection
-        countySelect.addEventListener('change', () => {
-            const selectedCounty = countySelect.value;
-            lakeMap.filterByCounty(selectedCounty);
-        });
-    });
+        if (counties && counties.length > 0) {
+            countySelect.innerHTML = '<option value="">All Counties</option>';
+            counties.forEach(county => {
+                const option = document.createElement('option');
+                option.value = county;
+                option.textContent = county;
+                countySelect.appendChild(option);
+            });
+            
+            // Handle county selection
+            countySelect.addEventListener('change', () => {
+                const selectedCounty = countySelect.value;
+                lakeMap.filterByCounty(selectedCounty);
+            });
+        } // Closes: if (counties && counties.length > 0)
+    }); // Closes: dataLoader.onDataLoaded(() => {
 }
 
 // Display lake details in the side panel
 function displayLakeDetails(lake, lakeDetails) {
-    const detailsPanel = document.getElementById('lake-details');
-    const lakeName = document.getElementById('lake-name');
-    const lakeInfo = document.getElementById('lake-info');
-    const fishInfo = document.getElementById('fish-info');
+    console.log("app.js: displayLakeDetails called with lake:", lake, "and lakeDetails:", lakeDetails);
     
-    // Set lake name
-    lakeName.textContent = lake.name || 'Unknown Lake';
-    
-    // Build lake info HTML
-    let infoHTML = `
-        <div class="info-section">
-            <h3>Lake Information</h3>
-            <table class="info-table">
-                <tr>
-                    <th>County:</th>
-                    <td>${lake.county || 'Unknown'}</td>
-                </tr>
-    `;
-    
-    if (lake.area_acres) {
-        infoHTML += `
-                <tr>
-                    <th>Area:</th>
-                    <td>${Number(lake.area_acres).toLocaleString()} acres</td>
-                </tr>
-        `;
+    const lakeDetailsPanel = document.getElementById('lake-details');
+    if (!lake) {
+        if (lakeDetailsPanel) {
+            lakeDetailsPanel.innerHTML = '<p>Lake data not available.</p>';
+            lakeDetailsPanel.classList.add('active');
+        }
+        return;
     }
     
-    if (lake.max_depth_ft) {
-        infoHTML += `
-                <tr>
-                    <th>Max Depth:</th>
-                    <td>${Number(lake.max_depth_ft).toLocaleString()} feet</td>
-                </tr>
-        `;
+    // Ensure the panel is visible
+    if (lakeDetailsPanel) {
+        lakeDetailsPanel.classList.add('active');
     }
-    
-    if (lake.mean_depth_ft) {
-        infoHTML += `
-                <tr>
-                    <th>Mean Depth:</th>
-                    <td>${Number(lake.mean_depth_ft).toLocaleString()} feet</td>
-                </tr>
-        `;
+
+    // Update the lake name in the header
+    const lakeNameEl = document.getElementById('lake-name');
+    if (lakeNameEl) {
+        lakeNameEl.textContent = lake.name || 'Unknown Lake';
     }
-    
-    if (lake.shore_length_mi) {
-        infoHTML += `
-                <tr>
-                    <th>Shoreline:</th>
-                    <td>${Number(lake.shore_length_mi).toLocaleString()} miles</td>
-                </tr>
-        `;
+
+    // Helper to create a property element if the value exists
+    const createPropertyElement = (label, value, unit = '') => {
+        if (value === null || value === undefined || value === '') return '';
+        const formattedValue = unit ? `${value} ${unit}` : value;
+        return `<p><strong>${label}:</strong> ${formattedValue}</p>`;
+    };
+
+    // Update lake info section
+    const lakeInfoEl = document.getElementById('lake-info');
+    if (lakeInfoEl) {
+        let lakeInfoContent = '';
+        lakeInfoContent += createPropertyElement('County', lake.county);
+        lakeInfoContent += createPropertyElement('Area', lake.area_acres, 'acres');
+        lakeInfoContent += createPropertyElement('Max Depth', lake.max_depth_ft, 'ft');
+        lakeInfoContent += createPropertyElement('Mean Depth', lake.mean_depth_ft, 'ft');
+        lakeInfoContent += createPropertyElement('Shore Length', lake.shore_length_mi, 'miles');
+        
+        // Add DOW number if available
+        if (lake.dow_number) {
+            lakeInfoContent += createPropertyElement('DOW Number', lake.dow_number);
+        }
+        
+        lakeInfoEl.innerHTML = lakeInfoContent || '<p>No additional lake information available.</p>';
     }
-    
-    if (lake.dow_number) {
-        infoHTML += `
-                <tr>
-                    <th>DOW Number:</th>
-                    <td>${lake.dow_number}</td>
-                </tr>
-        `;
+
+    // Update fish info section
+    const fishInfoEl = document.getElementById('fish-info');
+    if (!fishInfoEl) return;
+
+    if (!lakeDetails || !lakeDetails.fishCatch || Object.keys(lakeDetails.fishCatch).length === 0) {
+        fishInfoEl.innerHTML = '<div class="no-data"><p>No fish survey data available for this lake.</p></div>';
+        return;
     }
-    
-    if (lake.alternate_name) {
-        infoHTML += `
-                <tr>
-                    <th>Also Known As:</th>
-                    <td>${lake.alternate_name}</td>
-                </tr>
-        `;
-    }
-    
-    infoHTML += `
-            </table>
+
+    let fishInfoContent = `
+        <div class="fish-survey-header">
+            <h3>Fish Survey Data</h3>
+            <div class="survey-legend">
+                <span class="legend-item"><span class="legend-color cpue"></span> CPUE</span>
+                <span class="legend-item"><span class="legend-color total"></span> Total Catch</span>
+            </div>
         </div>
+        <div class="fish-species-container">
     `;
     
-    lakeInfo.innerHTML = infoHTML;
+    // Process fish catch data
+    const fishCatchData = lakeDetails.fishCatch;
+    const speciesList = Object.entries(fishCatchData)
+        .filter(([_, surveys]) => Array.isArray(surveys) && surveys.length > 0)
+        .sort((a, b) => a[0].localeCompare(b[0])); // Sort species alphabetically
     
-    // Build fish info HTML
-    const { fishCatch = {}, fishLength = {} } = lakeDetails || {};
-    let fishHTML = '';
-    
-    // Check if we have fish data
-    const hasFishData = Object.keys(fishCatch).length > 0;
-    
-    if (hasFishData) {
-        fishHTML = `
-            <div class="info-section">
-                <h3>Fish Species</h3>
-                <div class="fish-list">
+    if (speciesList.length === 0) {
+        fishInfoEl.innerHTML = '<div class="no-data"><p>No fish survey data available for this lake.</p></div>';
+        return;
+    }
+
+    speciesList.forEach(([species, surveys]) => {
+        // Get unique survey dates and sort them in descending order (most recent first)
+        const surveyDates = [...new Set(surveys.map(s => s.survey_date))]
+            .filter(Boolean)
+            .sort((a, b) => new Date(b) - new Date(a));
+        
+        // Calculate total CPUE and catch across all surveys for this species
+        const totalCatch = surveys.reduce((sum, survey) => sum + (parseInt(survey.total_catch) || 0), 0);
+        const avgCPUE = (surveys.reduce((sum, survey) => sum + (parseFloat(survey.cpue) || 0), 0) / surveys.length).toFixed(2);
+        
+        fishInfoContent += `
+            <div class="fish-species">
+                <div class="species-header">
+                    <h4>${species}</h4>
+                    <div class="species-stats">
+                        <span class="stat"><strong>Avg CPUE:</strong> ${avgCPUE}</span>
+                        <span class="stat"><strong>Total Catch:</strong> ${totalCatch}</span>
+                        <span class="stat"><strong>Surveys:</strong> ${surveyDates.length}</span>
+                    </div>
+                </div>
+                <div class="survey-dates">
         `;
         
-        // Create a list of all fish species in this lake
-        const fishSpecies = Object.keys(fishCatch);
-        
-        fishSpecies.forEach(speciesCode => {
-            const speciesInfo = dataLoader.getFishSpecies(speciesCode) || { name: 'Unknown Species', scientific_name: 'Unknown' };
-            const catchData = fishCatch[speciesCode] || [];
+        // Display each survey date with collapsible content
+        surveyDates.forEach(date => {
+            const dateSurveys = surveys.filter(s => s.survey_date === date);
+            const dateId = `date-${date}-${species.replace(/\s+/g, '-')}`;
             
-            // Calculate average CPUE (Catch Per Unit Effort)
-            let totalCPUE = 0;
-            let countCPUE = 0;
-            
-            catchData.forEach(catch_entry => {
-                if (catch_entry && catch_entry.cpue) {
-                    totalCPUE += catch_entry.cpue;
-                    countCPUE++;
-                }
-            });
-            
-            const avgCPUE = countCPUE > 0 ? (totalCPUE / countCPUE).toFixed(2) : 'N/A';
-            
-            // Get the most recent survey date
-            const surveyDates = catchData
-                .filter(entry => entry && entry.survey_date)
-                .map(entry => entry.survey_date);
-            const mostRecentSurvey = surveyDates.length > 0 ? 
-                new Date(Math.max(...surveyDates.map(date => new Date(date)))).toLocaleDateString() : 
-                'N/A';
-            
-            fishHTML += `
-                <div class="fish-card">
-                    <h4>${speciesInfo.name}</h4>
-                    <p class="scientific-name">${speciesInfo.scientific_name}</p>
-                    <div class="fish-stats">
-                        <div class="stat">
-                            <span class="stat-label">Avg. Catch Rate:</span>
-                            <span class="stat-value">${avgCPUE}</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">Last Survey:</span>
-                            <span class="stat-value">${mostRecentSurvey}</span>
-                        </div>
-                    </div>
+            fishInfoContent += `
+                <div class="survey-date">
+                    <button class="survey-date-btn" aria-expanded="false" data-target="${dateId}">
+                        <span class="date">${date}</span>
+                        <span class="survey-count">${dateSurveys.length} survey${dateSurveys.length > 1 ? 's' : ''}</span>
+                        <span class="toggle-icon">+</span>
+                    </button>
+                    <div id="${dateId}" class="survey-details" hidden>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Gear Type</th>
+                                    <th>CPUE</th>
+                                    <th>Total Catch</th>
+                                </tr>
+                            </thead>
+                            <tbody>
             `;
             
-            // Add length distribution if available
-            if (fishLength[speciesCode] && fishLength[speciesCode].length > 0) {
-                const lengthData = fishLength[speciesCode][0].length_distribution;
-                
-                if (lengthData && Object.keys(lengthData).length > 0) {
-                    fishHTML += `
-                        <div class="length-distribution">
-                            <h5>Length Distribution</h5>
-                            <div class="length-chart">
-                    `;
-                    
-                    // Simple bar chart for length distribution
-                    const lengthRanges = Object.keys(lengthData).sort();
-                    const maxCount = Math.max(...Object.values(lengthData));
-                    
-                    lengthRanges.forEach(range => {
-                        const count = lengthData[range];
-                        const percentage = maxCount > 0 ? (count / maxCount) * 100 : 0;
-                        
-                        fishHTML += `
-                            <div class="length-bar-container" title="${range} inches: ${count} fish">
-                                <div class="length-label">${range}"</div>
-                                <div class="length-bar" style="width: ${percentage}%"></div>
-                                <div class="length-count">${count}</div>
-                            </div>
-                        `;
-                    });
-                    
-                    fishHTML += `
-                            </div>
-                        </div>
-                    `;
-                }
-            }
+            dateSurveys.forEach(survey => {
+                fishInfoContent += `
+                    <tr>
+                        <td>${survey.gear_type || 'N/A'}</td>
+                        <td class="cpue">${survey.cpue || 'N/A'}</td>
+                        <td class="total">${survey.total_catch || 'N/A'}</td>
+                    </tr>
+                `;
+            });
             
-            fishHTML += `
+            fishInfoContent += `
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             `;
         });
         
-        fishHTML += `
+        fishInfoContent += `
                 </div>
             </div>
         `;
-    } else {
-        fishHTML = `
-            <div class="info-section">
-                <h3>Fish Species</h3>
-                <p>No fish survey data available for this lake.</p>
+    });
+    
+    fishInfoContent += `</div>`; // Close fish-species-container
+    
+    // Add fish length data if available
+    if (lakeDetails.fishLength && Object.keys(lakeDetails.fishLength).length > 0) {
+        fishInfoContent += `
+            <div class="length-data-container">
+                <h3>Fish Length Data</h3>
+                <div class="length-data-grid">
+        `;
+        
+        Object.entries(lakeDetails.fishLength).forEach(([species, lengthData]) => {
+            if (!Array.isArray(lengthData) || lengthData.length === 0) return;
+            
+            fishInfoContent += `
+                <div class="length-data-item">
+                    <h4>${species}</h4>
+                    <div class="length-data-details">
+            `;
+            
+            // Group by survey date
+            const surveysByDate = {};
+            lengthData.forEach(record => {
+                if (!record.survey_date) return;
+                if (!surveysByDate[record.survey_date]) {
+                    surveysByDate[record.survey_date] = [];
+                }
+                surveysByDate[record.survey_date].push(record);
+            });
+            
+            Object.entries(surveysByDate).forEach(([date, records]) => {
+                fishInfoContent += `<div class="length-survey">`;
+                fishInfoContent += `<strong>${date}:</strong> `;
+                
+                const lengthInfo = records.map(record => {
+                    if (record.length_distribution && typeof record.length_distribution === 'object') {
+                        // Format length distribution if it's an object
+                        return Object.entries(record.length_distribution)
+                            .map(([length, count]) => `${length}": ${count}`)
+                            .join(', ');
+                    } else if (record.length_inches) {
+                        return `${record.length_inches} inches`;
+                    }
+                    return '';
+                }).filter(Boolean).join('; ');
+                
+                fishInfoContent += lengthInfo || 'No length data';
+                fishInfoContent += `</div>`;
+            });
+            
+            fishInfoContent += `
+                    </div>
+                </div>
+            `;
+        });
+        
+        fishInfoContent += `
+                </div>
             </div>
         `;
     }
     
-    fishInfo.innerHTML = fishHTML;
+    fishInfoEl.innerHTML = fishInfoContent || '<div class="no-data"><p>No fish data available.</p></div>';
     
-    // Show details panel
-    detailsPanel.classList.add('active');
+    // Add event listeners for collapsible sections
+    document.querySelectorAll('.survey-date-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const targetId = button.getAttribute('data-target');
+            const target = document.getElementById(targetId);
+            const isExpanded = button.getAttribute('aria-expanded') === 'true';
+            
+            button.setAttribute('aria-expanded', !isExpanded);
+            target.hidden = isExpanded;
+            button.querySelector('.toggle-icon').textContent = isExpanded ? '+' : '−';
+        });
+    });
 }
+
 
 // Export app functions for potential use in other modules
 export { initApp, displayLakeDetails }; 

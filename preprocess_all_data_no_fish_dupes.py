@@ -25,11 +25,12 @@ FILE_CONFIGS = {
     }
 }
 
+# Custom JSON encoder to handle NaN values by converting them to None (-> null in JSON)
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
+        if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)): # Handle NaN and Inf
             return None
-        if pd.isna(obj): 
+        if pd.isna(obj): # Handle pandas NA types like pd.NA, NaT
             return None
         return super().default(obj)
 
@@ -49,9 +50,10 @@ def convert_excel_to_csv(input_path, output_path=None, config=None):
                     if df[col].dtype == 'object': df[col] = df[col].astype(str).str.replace(',', '', regex=False)
                     df[col] = pd.to_numeric(df[col], errors='coerce').astype('float64')
             df.to_csv(output_path, index=False)
+            # print(f"Successfully converted and typed {input_path} to {output_path}")
         else:
             df.to_csv(output_path, index=False)
-        # print(f"Converted {input_path} to {output_path}") # Quieter
+            # print(f"Converted {input_path} to {output_path} (basic conversion)")
         return output_path
     except Exception as e: print(f"Error converting {input_path}: {e}"); return None
 
@@ -102,9 +104,46 @@ def process_lake_metadata(min_lake_size_acres=0, require_coordinates=False):
             if col not in ['LAKE_CENTER_LAT_DD5', 'LAKE_CENTER_LONG_DD5']: df[col] = df[col].round(2)
     
     lakes = []
-    # This dictionary will now store name -> list of map_ids
-    name_to_map_ids_lookup = {} 
+    # For building name_to_map_id_lookup and identifying ambiguous names
+    name_map_id_associations = {} # Stores lists of map_ids for each name
     
+    # First pass: collect all map_ids associated with each normalized name
+    for _, row in df.iterrows():
+        current_map_id = None
+        raw_dow_primary = row.get('DOW_NBR_PRIMARY'); raw_dow_sub_basin = row.get('DOW_SUB_BASIN_NBR_PRIMARY')
+        if pd.notna(raw_dow_primary) and pd.notna(raw_dow_sub_basin):
+            try:
+                num_dow_primary = pd.to_numeric(get_cleaned_id(raw_dow_primary), errors='coerce')
+                num_dow_sub_basin = pd.to_numeric(get_cleaned_id(raw_dow_sub_basin), errors='coerce')
+                if pd.notna(num_dow_primary) and pd.notna(num_dow_sub_basin):
+                    current_map_id = f"{int(num_dow_primary)}{int(num_dow_sub_basin):02d}"
+            except: pass
+        
+        if current_map_id:
+            norm_name = normalize_name(row.get('LAKE_NAME'))
+            if norm_name:
+                if norm_name not in name_map_id_associations: name_map_id_associations[norm_name] = set()
+                name_map_id_associations[norm_name].add(current_map_id)
+            
+            norm_alt_name = normalize_name(row.get('ALT_LAKE_NAME'))
+            if norm_alt_name:
+                if norm_alt_name not in name_map_id_associations: name_map_id_associations[norm_alt_name] = set()
+                name_map_id_associations[norm_alt_name].add(current_map_id)
+
+    # Identify ambiguous names (names mapping to more than one map_id)
+    ambiguous_names_for_mapid = set()
+    for name, map_ids_set in name_map_id_associations.items():
+        if len(map_ids_set) > 1:
+            print(f"Warning: Normalized lake name '{name}' is ambiguous and maps to multiple map_ids: {map_ids_set}. Fish data for this name will be excluded.")
+            ambiguous_names_for_mapid.add(name)
+
+    # Build the final lookup, excluding ambiguous names
+    name_to_map_id_lookup = {}
+    for name, map_ids_set in name_map_id_associations.items():
+        if name not in ambiguous_names_for_mapid:
+            name_to_map_id_lookup[name] = list(map_ids_set)[0] # Get the single map_id
+
+    # Second pass: create lake entries for JSON
     for _, row in df.iterrows():
         lake_entry_fields = {
             'id': get_cleaned_id(row.get('FISHERIES_WATERBODY_ID')),
@@ -115,7 +154,7 @@ def process_lake_metadata(min_lake_size_acres=0, require_coordinates=False):
             'latitude': row.get('LAKE_CENTER_LAT_DD5'), 'longitude': row.get('LAKE_CENTER_LONG_DD5'),
             'alternate_name': get_cleaned_id(row.get('ALT_LAKE_NAME'))
         }
-        for key, value in lake_entry_fields.items():
+        for key, value in lake_entry_fields.items(): # Convert pd.NA or np.nan to None
             if pd.isna(value) or (isinstance(value, float) and np.isnan(value)): lake_entry_fields[key] = None
 
         current_map_id = None; raw_dow_primary = row.get('DOW_NBR_PRIMARY'); raw_dow_sub_basin = row.get('DOW_SUB_BASIN_NBR_PRIMARY')
@@ -133,31 +172,12 @@ def process_lake_metadata(min_lake_size_acres=0, require_coordinates=False):
             try: lake_entry_fields['dow_number'] = str(int(pd.to_numeric(get_cleaned_id(raw_dow_primary), errors='coerce')))
             except: lake_entry_fields['dow_number'] = get_cleaned_id(raw_dow_primary)
         lakes.append(lake_entry_fields)
-
-        # Populate name_to_map_ids_lookup (name -> list of map_ids)
-        if current_map_id:
-            norm_name = normalize_name(lake_entry_fields['name'])
-            if norm_name:
-                if norm_name not in name_to_map_ids_lookup: name_to_map_ids_lookup[norm_name] = []
-                if current_map_id not in name_to_map_ids_lookup[norm_name]: # Avoid duplicates in list
-                    name_to_map_ids_lookup[norm_name].append(current_map_id)
-            
-            norm_alt_name = normalize_name(lake_entry_fields['alternate_name'])
-            if norm_alt_name:
-                if norm_alt_name not in name_to_map_ids_lookup: name_to_map_ids_lookup[norm_alt_name] = []
-                if current_map_id not in name_to_map_ids_lookup[norm_alt_name]: # Avoid duplicates in list
-                    name_to_map_ids_lookup[norm_alt_name].append(current_map_id)
-    
-    # Print warnings for ambiguous names (mapping to multiple map_ids)
-    for name, map_ids_list in name_to_map_ids_lookup.items():
-        if len(map_ids_list) > 1:
-            print(f"Warning: Normalized lake name '{name}' is ambiguous and maps to multiple map_ids: {map_ids_list}. Fish data for this name will be DUPLICATED for each map_id.")
-
+        
     output_path = Path('data/lakes.json'); output_path.parent.mkdir(exist_ok=True)
-    with open(output_path, 'w') as f: json.dump(lakes, f, indent=2, cls=CustomJSONEncoder)
+    with open(output_path, 'w') as f: json.dump(lakes, f, indent=2, cls=CustomJSONEncoder) # Use custom encoder
     print(f"Saved {len(lakes)} lakes to {output_path}")
-    if not name_to_map_ids_lookup: print("Warning: name_to_map_ids_lookup is empty. Fish data linking by name will fail.")
-    return lakes, name_to_map_ids_lookup
+    if not name_to_map_id_lookup: print("Warning: name_to_map_id_lookup is empty post-processing. Fish data linking by name will fail.")
+    return lakes, name_to_map_id_lookup
 
 GLOBAL_CATCH_FILE_CONFIG = { 'lake_name_col': 'WATER_BODY_NAME', 'alt_name_col': 'ALT_NAME', 'species_col': 'SPECIES_CODE'}
 MEGA_LENGTH_FILE_CONFIG = {
@@ -165,11 +185,11 @@ MEGA_LENGTH_FILE_CONFIG = {
     'length_cols': ['0-5 INCHES', '6-7 INCHES', '8-9 INCHES', '10-11 INCHES', '12-14 INCHES', '15-19 INCHES', '20-24 INCHES', '25-29 INCHES', '31-34 INCHES', '35-39 INCHES', '40-44 INCHES', '45-49 INCHES', '50+INCHES']
 }
 
-def process_fish_data(file_path_str, data_type_name, name_to_map_ids_lookup, fish_file_config):
+def process_fish_data(file_path_str, data_type_name, name_to_map_id_lookup, fish_file_config):
     print(f"Processing {data_type_name} data from {file_path_str} by linking to map_id via name...")
     data_path = Path(file_path_str)
     if not data_path.exists(): print(f"Error: {data_type_name} data file {data_path} not found."); return {}
-    if not name_to_map_ids_lookup: print(f"Error: Name-to-map_id lookup is empty for {file_path_str}. Cannot link {data_type_name} data."); return {}
+    if not name_to_map_id_lookup: print(f"Error: Name-to-map_id lookup is empty for {file_path_str}. Cannot link {data_type_name} data."); return {}
 
     LAKE_NAME_COL = fish_file_config['lake_name_col']; ALT_NAME_COL = fish_file_config.get('alt_name_col'); SPECIES_COL = fish_file_config['species_col']
     try: df = pd.read_csv(data_path, low_memory=False, dtype=str)
@@ -180,59 +200,52 @@ def process_fish_data(file_path_str, data_type_name, name_to_map_ids_lookup, fis
     if missing_cols: print(f"Error: Essential columns {missing_cols} not found in {data_path}."); return {}
     if ALT_NAME_COL and ALT_NAME_COL not in df.columns: print(f"Warning: Alt name col '{ALT_NAME_COL}' not in {data_path}.")
 
-    processed_data = {}; unlinked_records = 0; duplicated_for_ambiguous = 0
+    processed_data = {}; unlinked_records = 0
     for _, row in df.iterrows():
-        map_id_key_list = None; norm_fish_lake_name = normalize_name(row.get(LAKE_NAME_COL))
-        if norm_fish_lake_name: map_id_key_list = name_to_map_ids_lookup.get(norm_fish_lake_name)
-        
-        if not map_id_key_list and ALT_NAME_COL and ALT_NAME_COL in row:
+        map_id_key = None; norm_fish_lake_name = normalize_name(row.get(LAKE_NAME_COL))
+        if norm_fish_lake_name: map_id_key = name_to_map_id_lookup.get(norm_fish_lake_name)
+        if not map_id_key and ALT_NAME_COL and ALT_NAME_COL in row: # Check if ALT_NAME_COL exists in row
             norm_fish_alt_lake_name = normalize_name(row.get(ALT_NAME_COL))
-            if norm_fish_alt_lake_name: map_id_key_list = name_to_map_ids_lookup.get(norm_fish_alt_lake_name)
+            if norm_fish_alt_lake_name: map_id_key = name_to_map_id_lookup.get(norm_fish_alt_lake_name)
         
         species_code = get_cleaned_id(row.get(SPECIES_COL))
-        if not map_id_key_list or not species_code: # map_id_key_list is a list of map_ids or None
-            if not map_id_key_list and norm_fish_lake_name: unlinked_records +=1
+        if not map_id_key or not species_code:
+            if not map_id_key and norm_fish_lake_name : unlinked_records +=1
             continue 
+        if map_id_key not in processed_data: processed_data[map_id_key] = {}
+        if species_code not in processed_data[map_id_key]: processed_data[map_id_key][species_code] = []
         
-        if len(map_id_key_list) > 1: duplicated_for_ambiguous +=1
-
-        for map_id_key in map_id_key_list: # Iterate through all map_ids associated with the name
-            if map_id_key not in processed_data: processed_data[map_id_key] = {}
-            if species_code not in processed_data[map_id_key]: processed_data[map_id_key][species_code] = []
-            
-            entry = {'survey_date': get_cleaned_id(row.get('SURVEY_DATE'))}
-            if data_type_name == "catch":
-                entry['cpue'] = None; raw_cpue = row.get('CATCH_CPUE')
-                if pd.notna(raw_cpue):
-                    try: val_str = str(raw_cpue).strip().lower(); entry['cpue'] = float(val_str) if val_str not in ['∞', 'inf', 'infinity', '-inf'] else float(val_str)
-                    except ValueError: pass
-                entry['total_catch'] = None; raw_total_catch = row.get('TOTAL_CATCH')
-                if pd.notna(raw_total_catch):
-                    try: entry['total_catch'] = int(float(raw_total_catch))
-                    except ValueError: pass
-                entry['gear_type'] = get_cleaned_id(row.get('GEAR'))
-            elif data_type_name == "length":
-                length_dist = {}; length_cols = fish_file_config.get('length_cols', [])
-                for col_name in length_cols:
-                    raw_val = row.get(col_name); range_key = col_name.upper().replace(' INCHES', '').replace('"', '').replace("'", '')
-                    if pd.notna(raw_val):
-                        try: length_dist[range_key] = int(float(raw_val))
-                        except ValueError: length_dist[range_key] = None
-                    else: length_dist[range_key] = None
-                if not any(v is not None for v in length_dist.values()): continue
-                entry['length_distribution'] = length_dist
-            processed_data[map_id_key][species_code].append(entry)
+        entry = {'survey_date': get_cleaned_id(row.get('SURVEY_DATE'))}
+        if data_type_name == "catch":
+            entry['cpue'] = None; raw_cpue = row.get('CATCH_CPUE')
+            if pd.notna(raw_cpue):
+                try: val_str = str(raw_cpue).strip().lower(); entry['cpue'] = float(val_str) if val_str not in ['∞', 'inf', 'infinity', '-inf'] else float(val_str)
+                except ValueError: pass
+            entry['total_catch'] = None; raw_total_catch = row.get('TOTAL_CATCH')
+            if pd.notna(raw_total_catch):
+                try: entry['total_catch'] = int(float(raw_total_catch))
+                except ValueError: pass
+            entry['gear_type'] = get_cleaned_id(row.get('GEAR'))
+        elif data_type_name == "length":
+            length_dist = {}; length_cols = fish_file_config.get('length_cols', [])
+            for col_name in length_cols:
+                raw_val = row.get(col_name); range_key = col_name.upper().replace(' INCHES', '').replace('"', '').replace("'", '')
+                if pd.notna(raw_val):
+                    try: length_dist[range_key] = int(float(raw_val))
+                    except ValueError: length_dist[range_key] = None
+                else: length_dist[range_key] = None
+            if not any(v is not None for v in length_dist.values()): continue
+            entry['length_distribution'] = length_dist
+        processed_data[map_id_key][species_code].append(entry)
     
-    if unlinked_records > 0: print(f"Warning: {unlinked_records} fish records in {data_path} could not be linked (name not found in lake metadata).")
-    if duplicated_for_ambiguous > 0: print(f"Note: {duplicated_for_ambiguous} fish records were duplicated across multiple map_ids due to ambiguous lake names.")
-        
+    if unlinked_records > 0: print(f"Warning: {unlinked_records} records in {data_path} could not be linked to a map_id via lake name and were skipped (likely due to ambiguous names or names not in lake metadata).")
     output_path = Path(f'data/fish_{data_type_name}.json'); output_path.parent.mkdir(exist_ok=True)
     with open(output_path, 'w') as f: json.dump(processed_data, f, indent=2, cls=CustomJSONEncoder)
-    print(f"Saved fish {data_type_name} data for {len(processed_data)} unique map_ids to {output_path}")
+    print(f"Saved fish {data_type_name} data for {len(processed_data)} map_ids to {output_path}")
     return processed_data
 
-def process_fish_catch_data(name_to_map_ids_lookup): return process_fish_data('attached_assets/GLOBAL_CATCH_FILE.CSV', "catch", name_to_map_ids_lookup, GLOBAL_CATCH_FILE_CONFIG)
-def process_fish_length_data(name_to_map_ids_lookup): return process_fish_data('attached_assets/MEGA_LENGTH_CSV_FILE.CSV', "length", name_to_map_ids_lookup, MEGA_LENGTH_FILE_CONFIG)
+def process_fish_catch_data(name_to_map_id_lookup): return process_fish_data('attached_assets/GLOBAL_CATCH_FILE.CSV', "catch", name_to_map_id_lookup, GLOBAL_CATCH_FILE_CONFIG)
+def process_fish_length_data(name_to_map_id_lookup): return process_fish_data('attached_assets/MEGA_LENGTH_CSV_FILE.CSV', "length", name_to_map_id_lookup, MEGA_LENGTH_FILE_CONFIG)
 def create_species_reference():
     print("Creating fish species reference...")
     catch_path = Path('attached_assets/GLOBAL_CATCH_FILE.CSV')
@@ -260,7 +273,7 @@ def create_species_reference():
     print(f"Saved {len(species_dict)} fish species to {output_path}"); return species_dict
 
 def process_excel_files():
-    print("Converting Excel files to CSV...")
+    # print("Converting Excel files to CSV...") # Less verbose
     data_dir = Path('attached_assets'); excel_files = list(data_dir.glob('*.xls')) + list(data_dir.glob('*.xlsx'))
     if not excel_files: print(f"No Excel files found in {data_dir}"); return
     for excel_file_path in excel_files:
@@ -271,11 +284,11 @@ def main():
     Path('data').mkdir(exist_ok=True)
     try:
         process_excel_files()
-        lakes, name_to_map_ids_lookup = process_lake_metadata(min_lake_size_acres=0, require_coordinates=False)
-        catch_data = process_fish_catch_data(name_to_map_ids_lookup)
-        length_data = process_fish_length_data(name_to_map_ids_lookup)
+        lakes, name_to_map_id_lookup = process_lake_metadata(min_lake_size_acres=0, require_coordinates=False)
+        catch_data = process_fish_catch_data(name_to_map_id_lookup)
+        length_data = process_fish_length_data(name_to_map_id_lookup)
         species_data = create_species_reference()
-        print(f"\nData processing complete! JSON files created for:\n- {len(lakes)} lakes\n- {len(catch_data)} unique map_ids with catch data\n- {len(length_data)} unique map_ids with length data\n- {len(species_data)} fish species")
+        print(f"\nData processing complete! JSON files created for:\n- {len(lakes)} lakes\n- {len(catch_data)} map_ids with catch data\n- {len(length_data)} map_ids with length data\n- {len(species_data)} fish species")
     except Exception as e: print(f"FATAL Error in main: {e}"); import traceback; traceback.print_exc()
 
 if __name__ == "__main__":

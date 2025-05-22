@@ -17,6 +17,15 @@ class DataLoader {
             const response = await fetch('data/lakes.json');
             this.lakes = await response.json();
             console.log(`Loaded ${this.lakes.length} lakes`);
+
+            // ---- START DIAGNOSTIC ----
+            if (this.lakes.length > 0) {
+                console.log("First 3 lake objects from data/lakes.json:", JSON.stringify(this.lakes.slice(0, 3), null, 2));
+                const gullLakeExample = this.lakes.find(lake => String(lake.dow_number) === "11030500");
+                console.log("Example Gull Lake (DNR_ID 11030500) found in this.lakes by 'dow_number':", gullLakeExample ? JSON.stringify(gullLakeExample, null, 2) : "NOT FOUND with ID 11030500 using 'dow_number'");
+            }
+            // ---- END DIAGNOSTIC ----
+
             return this.lakes;
         } catch (error) {
             console.error('Error loading lake data:', error);
@@ -107,7 +116,41 @@ class DataLoader {
 
     // Get lake by ID
     getLakeById(lakeId) {
-        return this.lakes.find(lake => lake.DNR_ID === lakeId);
+        console.log(`DataLoader.getLakeById: Attempting to find lake with lakeId: '${lakeId}' (type: ${typeof lakeId})`);
+        const StringLakeId = String(lakeId); // Ensure we're working with a string version for consistent logging
+
+        const foundLake = this.lakes.find(lake => {
+            // Before: use dow_number
+            // const lakeDowNumberStr = String(lake.dow_number);
+            // const isMatch = lakeDowNumberStr === StringLakeId;
+
+            // After: use map_id
+            const lakeMapIdStr = String(lake.map_id);
+            const isMatch = lakeMapIdStr === StringLakeId;
+
+            // Log details specifically for Gull Lake's DNR_ID or any problematic ID
+            if (StringLakeId === '11030500') {
+                // Before
+                //console.log(`DataLoader.getLakeById (Gull Lake Check): Comparing lake.dow_number '${lakeDowNumberStr}' (type: ${typeof lakeDowNumberStr}) from lake "${lake.name}" with input lakeId '${StringLakeId}' (type: ${typeof StringLakeId}). Match: ${isMatch}`);
+                // After
+                console.log(`DataLoader.getLakeById (Gull Lake Check): Comparing lake.map_id '${lakeMapIdStr}' (type: ${typeof lakeMapIdStr}) from lake "${lake.name}" with input lakeId '${StringLakeId}' (type: ${typeof StringLakeId}). Match: ${isMatch}`);
+            }
+            return isMatch;
+        });
+
+        if (StringLakeId === '11030500' && !foundLake) {
+            console.error(`DataLoader.getLakeById: Gull Lake (DNR_ID '11030500') NOT FOUND after detailed check.`);
+            // Check if Gull Lake exists with a numeric dow_number
+            const gullRawNumeric = this.lakes.find(l => l.dow_number === 11030500);
+            console.log(`DataLoader.getLakeById: Raw check for Gull Lake with numeric DOW 11030500:`, gullRawNumeric ? gullRawNumeric : "Not found with numeric DOW.");
+             const gullRawString = this.lakes.find(l => l.dow_number === "11030500");
+            console.log(`DataLoader.getLakeById: Raw check for Gull Lake with string DOW \"11030500\":`, gullRawString ? gullRawString : "Not found with string DOW.");
+        } else if (foundLake) {
+            // console.log(`DataLoader.getLakeById: Found lake:`, foundLake);
+        } else {
+            console.log(`DataLoader.getLakeById: Lake with lakeId '${StringLakeId}' not found.`);
+        }
+        return foundLake;
     }
 
     // Get fish species by code
@@ -133,15 +176,61 @@ class DataLoader {
         this.onDataLoadedCallbacks = [];
     }
 
-    // Search lakes by name
+    // Search lakes by name or alternative name
     searchLakesByName(query) {
-        if (!query) return [];
+        if (!query || query.trim() === '') return [];
         
-        const lowerQuery = query.toLowerCase();
-        return this.lakes.filter(lake => 
-            lake.name.toLowerCase().includes(lowerQuery) || 
-            (lake.alternate_name && lake.alternate_name.toLowerCase().includes(lowerQuery))
-        );
+        const searchTerm = query.trim().toLowerCase();
+        console.log(`Searching for: "${searchTerm}"`);
+        
+        if (this.lakes.length === 0) {
+            console.log('No lakes loaded in the data');
+            return [];
+        }
+        
+        // First pass: find exact matches at start of name
+        const exactMatches = this.lakes.filter(lake => {
+            const name = lake.name?.toLowerCase() || '';
+            const altName = lake.alternate_name?.toLowerCase() || '';
+            
+            return name === searchTerm || 
+                   name.startsWith(searchTerm + ' ') ||
+                   altName === searchTerm || 
+                   altName.startsWith(searchTerm + ' ');
+        });
+        
+        // Second pass: find partial matches if no exact matches found
+        const results = exactMatches.length > 0 ? exactMatches : this.lakes.filter(lake => {
+            const name = lake.name?.toLowerCase() || '';
+            const altName = lake.alternate_name?.toLowerCase() || '';
+            
+            return name.includes(searchTerm) || 
+                   altName.includes(searchTerm);
+        });
+        
+        // Sort results by relevance (exact matches first, then by name length)
+        results.sort((a, b) => {
+            const aName = a.name.toLowerCase();
+            const bName = b.name.toLowerCase();
+            
+            // Exact match comes first
+            if (aName === searchTerm) return -1;
+            if (bName === searchTerm) return 1;
+            
+            // Then by name length (shorter names first)
+            return aName.length - bName.length;
+        });
+        
+        console.log(`Search for "${query}" returned ${results.length} results`);
+        if (results.length > 0) {
+            console.log('First 3 results:', results.slice(0, 3).map(r => ({
+                name: r.name,
+                alternate_name: r.alternate_name,
+                county: r.county
+            })));
+        }
+        
+        return results;
     }
 
     // Filter lakes by county
@@ -158,7 +247,11 @@ class DataLoader {
                 counties.add(lake.county);
             }
         });
-        return Array.from(counties).sort();
+        // ---- START DIAGNOSTIC ----
+        const uniqueCountiesArray = Array.from(counties).sort();
+        console.log("Unique counties found by getAllCounties:", uniqueCountiesArray);
+        // ---- END DIAGNOSTIC ----
+        return uniqueCountiesArray;
     }
 
     // New method to get county bounds by name
