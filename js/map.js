@@ -18,7 +18,7 @@ class LakeMap {
         this.map = L.map(this.mapElementId, {
             minZoom: 0,
             maxZoom: 16
-        }).setView([46.5, -94.5], 11);
+        }).setView([46.5, -94.5], 9);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(this.map);
@@ -45,8 +45,33 @@ class LakeMap {
                         fillOpacity: 0
                     };
 
-                    if (this.selectedCounty && properties.county && properties.county.toUpperCase() !== this.selectedCounty.toUpperCase()) {
-                        return hiddenStyle;
+                    if (this.selectedCounty) {
+                        // Normalize the selected county name for comparison
+                        const selectedCounty = this.selectedCounty.trim().toUpperCase();
+                        
+                        // Check if we have a county property in the vector tile
+                        if (properties.county) {
+                            const tileCounty = String(properties.county).trim().toUpperCase();
+                            if (tileCounty !== selectedCounty) {
+                                return hiddenStyle;
+                            }
+                        } 
+                        // If no county in vector tile, try to match by DNR_ID
+                        else if (properties.DNR_ID) {
+                            const lake = dataLoader.getLakeById(properties.DNR_ID);
+                            if (lake && lake.county) {
+                                const lakeCounty = String(lake.county).trim().toUpperCase();
+                                if (lakeCounty !== selectedCounty) {
+                                    return hiddenStyle;
+                                }
+                            } else {
+                                // If we can't find the lake in our data, hide it to be safe
+                                return hiddenStyle;
+                            }
+                        } else {
+                            // If we can't determine the county, hide the feature
+                            return hiddenStyle;
+                        }
                     }
                     return defaultStyle;
                 }
@@ -169,36 +194,44 @@ class LakeMap {
     filterByCounty(county) {
         console.log(`Filter by county requested: ${county}.`);
         
+        // Store the previous county to check if it's actually changing
+        const previousCounty = this.selectedCounty;
         this.selectedCounty = county || null;
-
-        if (this.vectorLayer && typeof this.vectorLayer.redraw === 'function') {
-            this.vectorLayer.redraw(); // Redraw to show/hide lakes based on selectedCounty
+        
+        // Only proceed if the county actually changed
+        if (previousCounty === this.selectedCounty) {
+            return;
+        }
+        
+        // Force a redraw of the vector layer with the new county filter
+        if (this.vectorLayer) {
+            this.vectorLayer.redraw();
         }
         
         if (this.selectedCounty) {
             // Try to get bounds from dataLoader
             const countyBounds = dataLoader.getCountyBounds(this.selectedCounty);
-            if (countyBounds && countyBounds.isValid()) { // Ensure bounds are valid
+            if (countyBounds && countyBounds.isValid()) {
                 console.log(`Fitting map to bounds for ${this.selectedCounty}:`, countyBounds);
                 this.map.fitBounds(countyBounds);
             } else {
-                // Fallback if bounds are not found or invalid for the selected county
-                console.warn(`Could not find valid bounds for county: ${this.selectedCounty}. Falling back to default view or first lake logic if desired.`);
-                // Previous logic (zoom to first lake) can be reinstated here as a further fallback if needed,
-                // but for now, we'll go to a general view if specific county bounds aren't available.
-                // For example, could try to find *any* lake in the county if bounds failed but county is valid
+                // Fallback to finding the first lake in the county
                 const lakesInCounty = dataLoader.getLakesByCounty(this.selectedCounty);
+                console.log(`Found ${lakesInCounty.length} lakes in ${this.selectedCounty} county`);
+                
                 if (lakesInCounty.length > 0) {
-                    const firstLake = dataLoader.getLakeById(lakesInCounty[0].DNR_ID);
-                    if (firstLake && firstLake.center_lat && firstLake.center_lon) { 
-                         console.log(`No bounds found, centering on first lake: ${firstLake.name}`);
-                         this.map.setView([firstLake.center_lat, firstLake.center_lon], 10); 
-                    } else {
-                        this.map.setView([46.5, -94.5], 11); // Default if first lake has no coords
+                    // Use the first lake's coordinates if available
+                    const firstLake = lakesInCounty[0];
+                    if (firstLake.latitude && firstLake.longitude) { 
+                        console.log(`Centering on first lake in ${this.selectedCounty}: ${firstLake.name}`);
+                        this.map.setView([firstLake.latitude, firstLake.longitude], 10);
+                        return;
                     }
-                } else {
-                     this.map.setView([46.5, -94.5], 11); // Default if no lakes in county (or county invalid)
                 }
+                
+                // Default fallback view
+                console.warn(`Could not find valid bounds or lakes for county: ${this.selectedCounty}. Using default view.`);
+                this.map.setView([46.5, -94.5], 11);
             }
         } else {
             // No county selected, reset to default view

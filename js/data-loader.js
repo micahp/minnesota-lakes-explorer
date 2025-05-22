@@ -236,7 +236,7 @@ class DataLoader {
     // Filter lakes by county
     getLakesByCounty(county) {
         if (!county) return this.lakes;
-        return this.lakes.filter(lake => lake.COUNTY_NAME === county);
+        return this.lakes.filter(lake => lake.county === county);
     }
 
     // Get all unique counties
