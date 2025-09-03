@@ -196,6 +196,11 @@ sequenceDiagram
 - [Tailwind CSS v4 Documentation](https://tailwindcss.com/docs)
 - [Framer Motion Documentation](https://www.framer.com/motion/)
 
+### Decision Files
+- [minnedemo-implementation-roadmap-2024-07-31.md](decisions/minnedemo-implementation-roadmap-2024-07-31.md)
+- [minnedemo-integration-plan-2024-07-31.md](decisions/minnedemo-integration-plan-2024-07-31.md)
+- [dnr-fish-data-integration-2024-09-03.md](decisions/dnr-fish-data-integration-2024-09-03.md)
+
 ### Project-Specific Acronyms
 - **Minnedemo41**: Minnesota blockchain demonstration event
 - **FISH**: Fishing Incentive System Hash (demo token system)
