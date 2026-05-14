@@ -1,0 +1,9 @@
+# Environment variables (contains private keys)
+.env
+
+# Hardhat build artifacts
+artifacts/
+cache/
+
+# Node
+node_modules/
