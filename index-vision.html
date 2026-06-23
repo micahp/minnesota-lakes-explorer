@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minnesota Lake Explorer — Proof of Fish</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="" />
+  <!-- Leaflet.markercluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Base styles (structure, layout) — loaded first so vision-theme can override -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/fish-styles.css">
+
+  <!-- Vision Theme — deep water dark theme overrides everything -->
+  <link rel="stylesheet" href="css/vision-theme.css">
+
+  <link rel="icon" href="generated-icon.png">
+</head>
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-84X7TETZVW"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-84X7TETZVW');
+</script>
+
+<body>
+  <header>
+    <h1>Minnesota Lake Explorer</h1>
+    <div class="wallet-section">
+      <span id="wallet-address-display" class="wallet-address"></span>
+      <button id="wallet-connect-btn">Connect Wallet</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="sidebar">
+      <div class="controls">
+        <div class="control-group">
+          <label for="search-input">Search Lakes</label>
+          <form id="search-form">
+            <div class="search-container">
+              <input type="text" id="search-input" placeholder="Enter lake name...">
+              <button type="submit">Search</button>
+            </div>
+          </form>
+          <div id="results-count"></div>
+          <div id="search-results-list"></div>
+          <button id="clear-search">Clear</button>
+        </div>
+
+        <div class="control-group">
+          <label for="county-filter">Filter by County</label>
+          <select id="county-filter">
+            <option value="">All Counties</option>
+            <!-- County options will be populated by JavaScript -->
+          </select>
+        </div>
+      </div>
+
+      <div id="lake-details">
+        <div class="details-header">
+          <h2 id="lake-name">Lake Name</h2>
+          <button id="close-details">×</button>
+        </div>
+
+        <div id="lake-info">
+          <!-- Lake information will be populated by JavaScript -->
+        </div>
+
+        <!-- Proof of Fish Section — injected dynamically -->
+        <div id="pof-section-container"></div>
+
+        <div id="fish-info">
+          <!-- Fish information will be populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+
+    <div class="map-container">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+  <!-- Leaflet.markercluster JS -->
+  <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+  <!-- Leaflet.VectorGrid JS -->
+  <script src="https://unpkg.com/leaflet.vectorgrid@latest/dist/Leaflet.VectorGrid.bundled.min.js"></script>
+
+  <!-- ethers.js v6 from CDN — must load BEFORE wallet module -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6/dist/ethers.min.js"></script>
+
+  <!-- Core application (map, search, data loader, fish display) -->
+  <script type="module" src="js/app.js"></script>
+
+  <!-- Vision Module: Proof of Fish + Wallet integration -->
+  <script type="module">
+    /**
+     * Vision Module
+     * Hooks into the existing app to add Proof of Fish NFT functionality:
+     * - Wallet connect/disconnect in header
+     * - Proof of Fish status badge & mint button on lake details
+     * - OpenSea link for minted lakes
+     *
+     * Imports are singletons — they share the same instances as app.js.
+     */
+
+    import Wallet from './js/wallet.js';
+    import ProofOfFish from './js/proof-of-fish.js';
+    import lakeMapInstance from './js/map.js';
+
+    // ---- CONFIGURATION ----
+    // Update this when the contract is deployed
+    // ProofOfFish.setContractAddress('0x_YOUR_DEPLOYED_CONTRACT_HERE');
+
+    // ---- DOM References ----
+    const walletBtn = document.getElementById('wallet-connect-btn');
+    const walletAddressDisplay = document.getElementById('wallet-address-display');
+    const pofContainer = document.getElementById('pof-section-container');
+
+    // ---- State ----
+    let currentLake = null;
+    let currentLakeDetails = null;
+    let currentMintStatus = null; // 'loading' | 'minted' | 'unminted'
+    let currentTokenId = null;
+    let isMinting = false;
+
+    // ================================================================
+    //  WALLET UI
+    // ================================================================
+
+    function updateWalletUI() {
+      const connected = Wallet.isConnected();
+      const address = Wallet.getAddress();
+
+      if (connected && address) {
+        const short = `${address.slice(0, 6)}...${address.slice(-4)}`;
+        walletBtn.textContent = short;
+        walletBtn.classList.add('connected');
+        walletAddressDisplay.textContent = `Connected: ${short}`;
+      } else {
+        walletBtn.textContent = 'Connect Wallet';
+        walletBtn.classList.remove('connected');
+        walletAddressDisplay.textContent = '';
+      }
+    }
+
+    walletBtn.addEventListener('click', async () => {
+      if (Wallet.isConnected()) {
+        // Confirm disconnect
+        Wallet.disconnect();
+        updateWalletUI();
+        // Refresh PoF status (will show "connect wallet to mint")
+        refreshProofOfFishStatus();
+        return;
+      }
+
+      try {
+        walletBtn.textContent = 'Connecting...';
+        walletBtn.disabled = true;
+
+        await Wallet.connect();
+        updateWalletUI();
+
+        // Refresh PoF status now that wallet is connected
+        refreshProofOfFishStatus();
+      } catch (err) {
+        console.error('Wallet connection error:', err);
+        showToast(err.message || 'Failed to connect wallet', 'error');
+        updateWalletUI();
+      } finally {
+        walletBtn.disabled = false;
+      }
+    });
+
+    // Listen for MetaMask events
+    Wallet.on('accountsChanged', (address) => {
+      updateWalletUI();
+      refreshProofOfFishStatus();
+    });
+    Wallet.on('disconnect', () => {
+      updateWalletUI();
+      refreshProofOfFishStatus();
+    });
+
+    // Initial UI state
+    updateWalletUI();
+
+    // ================================================================
+    //  PROOF OF FISH — Status Check & Display
+    // ================================================================
+
+    /**
+     * Extract survey date range from fish catch data.
+     */
+    function extractSurveyDates(fishCatch) {
+      const allDates = [];
+      if (fishCatch) {
+        for (const surveys of Object.values(fishCatch)) {
+          if (!Array.isArray(surveys)) continue;
+          for (const s of surveys) {
+            if (s.survey_date) allDates.push(s.survey_date);
+          }
+        }
+      }
+      allDates.sort();
+      return {
+        firstSurvey: allDates.length > 0 ? allDates[0] : 'Unknown',
+        lastSurvey: allDates.length > 0 ? allDates[allDates.length - 1] : 'Unknown',
+      };
+    }
+
+    /**
+     * Extract unique species list from fish catch data.
+     */
+    function extractSpeciesList(fishCatch) {
+      if (!fishCatch) return [];
+      return Object.keys(fishCatch).filter(key => {
+        const surveys = fishCatch[key];
+        return Array.isArray(surveys) && surveys.length > 0;
+      }).sort();
+    }
+
+    /**
+     * Refresh the Proof of Fish status for the currently selected lake.
+     */
+    async function refreshProofOfFishStatus() {
+      if (!currentLake || !pofContainer) return;
+
+      const mapId = currentLake.map_id;
+      if (!mapId) {
+        renderPofSection('unavailable');
+        return;
+      }
+
+      // Show loading
+      renderPofSection('loading');
+
+      try {
+        const minted = await ProofOfFish.isLakeMinted(mapId);
+        currentMintStatus = minted ? 'minted' : 'unminted';
+        renderPofSection(currentMintStatus);
+      } catch (err) {
+        console.error('Error checking PoF status:', err);
+        currentMintStatus = 'unminted';
+        renderPofSection('unminted');
+      }
+    }
+
+    /**
+     * Render the Proof of Fish section in the lake details panel.
+     */
+    function renderPofSection(status) {
+      if (!pofContainer) return;
+
+      const mapId = currentLake ? currentLake.map_id : '';
+
+      if (status === 'unavailable') {
+        pofContainer.innerHTML = '';
+        return;
+      }
+
+      if (status === 'loading') {
+        pofContainer.innerHTML = `
+          <div class="pof-section">
+            <h3>Proof of Fish</h3>
+            <div class="pof-status-row">
+              <span class="pof-badge loading">Checking chain...</span>
+            </div>
+          </div>`;
+        return;
+      }
+
+      if (status === 'minted') {
+        const baseTokenId = currentTokenId || '?';
+        const contractAddr = ProofOfFish.getContractAddress();
+        const openseaUrl = `https://opensea.io/assets/base/${contractAddr}/${baseTokenId}`;
+
+        pofContainer.innerHTML = `
+          <div class="pof-section">
+            <h3>Proof of Fish</h3>
+            <div class="pof-status-row">
+              <span class="pof-badge minted">Minted</span>
+              <a id="view-opensea-btn" href="${openseaUrl}" target="_blank" rel="noopener">
+                View on OpenSea ↗
+              </a>
+            </div>
+          </div>`;
+        return;
+      }
+
+      // Unminted
+      const walletConnected = Wallet.isConnected();
+      const contractIsPlaceholder =
+        ProofOfFish.getContractAddress() === '0x0000000000000000000000000000000000000000';
+
+      let mintButtonHtml = '';
+      if (contractIsPlaceholder) {
+        mintButtonHtml = `<button id="mint-pof-btn" disabled title="Contract not yet deployed">Contract Pending</button>`;
+      } else if (!walletConnected) {
+        mintButtonHtml = `<button id="mint-pof-btn" disabled title="Connect your wallet to mint">Connect Wallet to Mint</button>`;
+      } else if (isMinting) {
+        mintButtonHtml = `<button id="mint-pof-btn" class="minting" disabled>Minting...</button>`;
+      } else {
+        mintButtonHtml = `<button id="mint-pof-btn">Mint Proof of Fish</button>`;
+      }
+
+      pofContainer.innerHTML = `
+        <div class="pof-section">
+          <h3>Proof of Fish</h3>
+          <div class="pof-status-row">
+            <span class="pof-badge unminted">Unminted</span>
+            ${mintButtonHtml}
+          </div>
+        </div>`;
+
+      // Attach mint handler if button exists and is enabled
+      const mintBtn = document.getElementById('mint-pof-btn');
+      if (mintBtn && !mintBtn.disabled) {
+        mintBtn.addEventListener('click', handleMintClick);
+      }
+    }
+
+    /**
+     * Handle the Mint Proof of Fish button click.
+     */
+    async function handleMintClick() {
+      if (!currentLake || !currentLakeDetails || isMinting) return;
+
+      const mapId = currentLake.map_id;
+      const lakeName = currentLake.name || 'Unknown Lake';
+      const county = currentLake.county || 'Unknown';
+      const fishCatch = currentLakeDetails.fishCatch || {};
+
+      const speciesList = extractSpeciesList(fishCatch);
+      const speciesCount = speciesList.length;
+      const { firstSurvey, lastSurvey } = extractSurveyDates(fishCatch);
+
+      if (speciesCount === 0) {
+        showToast('No fish survey data available for this lake. Cannot mint.', 'error');
+        return;
+      }
+
+      isMinting = true;
+      renderPofSection('unminted'); // re-render to show "Minting..." state
+
+      try {
+        const result = await ProofOfFish.mintProofOfFish(
+          mapId,
+          lakeName,
+          county,
+          speciesList,
+          speciesCount,
+          firstSurvey,
+          lastSurvey
+        );
+
+        currentTokenId = result.tokenId;
+        currentMintStatus = 'minted';
+        isMinting = false;
+
+        showToast('Proof of Fish minted successfully! 🎣', 'success');
+        renderPofSection('minted');
+      } catch (err) {
+        console.error('Mint error:', err);
+        isMinting = false;
+
+        // Parse user-friendly message
+        let msg = err.message || 'Mint failed';
+        if (msg.includes('user rejected') || msg.includes('User denied')) {
+          msg = 'Transaction was cancelled.';
+        } else if (msg.includes('insufficient funds')) {
+          msg = 'Insufficient funds to cover gas.';
+        }
+
+        showToast(msg, 'error');
+        renderPofSection('unminted');
+      }
+    }
+
+    // ================================================================
+    //  TOAST NOTIFICATIONS
+    // ================================================================
+
+    let toastTimeout = null;
+
+    function showToast(message, type) {
+      // Remove existing toast
+      const existing = document.querySelector('.pof-toast');
+      if (existing) existing.remove();
+      if (toastTimeout) clearTimeout(toastTimeout);
+
+      const toast = document.createElement('div');
+      toast.className = `pof-toast ${type}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      toastTimeout = setTimeout(() => {
+        toast.style.animation = 'pof-toast-in 0.3s ease-out reverse';
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
+
+    // ================================================================
+    //  HOOK INTO LAKE SELECTION
+    //  Register a second callback on the shared lakeMapInstance.
+    //  app.js already registers one for displayLakeDetails.
+    // ================================================================
+
+    lakeMapInstance.onLakeSelected((lake, lakeDetails) => {
+      console.log('Vision module: lake selected', lake?.name, lake?.map_id);
+
+      currentLake = lake;
+      currentLakeDetails = lakeDetails;
+      currentMintStatus = null;
+      currentTokenId = null;
+
+      if (!lake || !lake.map_id) {
+        if (pofContainer) pofContainer.innerHTML = '';
+        return;
+      }
+
+      // Refresh PoF status (async, shows loading then result)
+      refreshProofOfFishStatus();
+    });
+
+    console.log('Vision module initialized. Proof of Fish ready. 🎣');
+  </script>
+</body>
+</html>

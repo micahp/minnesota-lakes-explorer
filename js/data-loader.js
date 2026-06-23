@@ -61,7 +61,7 @@ class DataLoader {
         };
     }
 
-    // Load fish catch data for a specific lake
+    // Load fish summary data for a specific lake (using fish_summary.json)
     async loadLakeFishCatch(lakeId) {
         if (this.fishCatch[lakeId]) {
             return this.fishCatch[lakeId];
@@ -69,14 +69,27 @@ class DataLoader {
 
         try {
             if (!this.allFishCatch) {
-                const response = await fetch('data/fish_catch.json');
+                const response = await fetch('data/fish_summary.json');
                 this.allFishCatch = await response.json();
             }
             
-            this.fishCatch[lakeId] = this.allFishCatch[lakeId] || {};
+            // Convert summary format to legacy format expected by display
+            // Summary: { species_code: { n, c, t, f, l } }
+            // Legacy: { species_code: [{ survey_date, cpue, total_catch, gear_type }] }
+            const summary = this.allFishCatch[lakeId] || {};
+            const legacy = {};
+            for (const [species, stats] of Object.entries(summary)) {
+                legacy[species] = [{
+                    survey_date: stats.l || stats.f || 'Unknown',
+                    cpue: stats.c,
+                    total_catch: stats.t,
+                    gear_type: `${stats.n} survey(s), ${stats.f || '?'} - ${stats.l || '?'}`
+                }];
+            }
+            this.fishCatch[lakeId] = legacy;
             return this.fishCatch[lakeId];
         } catch (error) {
-            console.error(`Error loading fish catch data for lake ${lakeId}:`, error);
+            console.error(`Error loading fish data for lake ${lakeId}:`, error);
             return {};
         }
     }
